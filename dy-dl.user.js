@@ -8,9 +8,9 @@
 // @icon            https://www.google.com/s2/favicons?sz=64&domain=douyin.com
 // @grant           none
 // @license         MIT
-// @updateURL       https://github.com/zhzLuke96/douyin-dl-user-js/raw/main/dy-dl.user.js
-// @downloadURL     https://github.com/zhzLuke96/douyin-dl-user-js/raw/main/dy-dl.user.js
 // @supportURL      https://github.com/zhzLuke96/douyin-dl-user-js/issues
+// @downloadURL https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.user.js
+// @updateURL https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.meta.js
 // ==/UserScript==
 
 (function () {
@@ -42,43 +42,93 @@
     return div.children[0];
   }
 
-  /**
-   *
-   * @param imgSrc {string}
-   * @param filename_input {string}
-   */
-  async function download_file(imgSrc, filename_input = "") {
-    if (imgSrc.startsWith("//")) {
-      const protocol = window.location.protocol;
-      imgSrc = `${protocol}${imgSrc}`;
-    }
-    const url = new URL(imgSrc);
-    const response = await fetch(imgSrc);
-    if (!response.ok) {
-      alert("Failed to fetch the file");
-      return;
-    }
-    const contentType = response.headers.get("content-type");
-    const fileExt = contentType.split("/")[1].toLowerCase() ?? ".jpeg";
-    let filename =
-      filename_input || url.pathname.split("/").pop() || "download";
-    if (filename.endsWith(".image")) {
-      // 去掉 .image 路由参数，一部分图片会走这个路由，去掉，我们使用从resp中拿到的 fileExt
-      filename = filename.slice(0, -".image".length);
-    }
-    if (!filename.toLowerCase().endsWith(fileExt.toLowerCase())) {
-      filename += `.${fileExt}`;
-    }
-    const blob = await response.blob();
-    const link = document.createElement("a");
-    link.style.display = "none";
-    link.download = filename;
-    link.href = URL.createObjectURL(blob);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+/**
+ *
+ * @param imgSrc {string}
+ * @param filename_input {string}
+ */
+async function download_file(imgSrc, filename_input = "") {
+  if (imgSrc.startsWith("//")) {
+    const protocol = window.location.protocol;
+    imgSrc = `${protocol}${imgSrc}`;
   }
+  const url = new URL(imgSrc);
+  const response = await fetch(imgSrc);
+  if (!response.ok) {
+    alert("Failed to fetch the file");
+    return;
+  }
+  const contentType = response.headers.get("content-type");
+  const isImage = contentType.startsWith("image/");
+  const isWebP = contentType.includes("webp");
+  const fileExt = isImage ? (isWebP ? "png" : contentType.split("/")[1].toLowerCase()) : contentType.split("/")[1].toLowerCase() ?? ".jpeg";
+
+  let filename =
+    filename_input || url.pathname.split("/").pop() || "download";
+  if (filename.endsWith(".image")) {
+    // 去掉 .image 路由参数，一部分图片会走这个路由，去掉，我们使用从resp中拿到的 fileExt
+    filename = filename.slice(0, -".image".length);
+  }
+  if (!filename.toLowerCase().endsWith(fileExt.toLowerCase())) {
+    filename += `.${fileExt}`;
+  }
+
+  const blob = await response.blob();
+
+  // 如果是WebP图片，转换为PNG
+  if (isImage && isWebP) {
+    try {
+      // 创建一个图像对象来加载WebP
+      const img = new Image();
+      img.src = URL.createObjectURL(blob);
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
+      // 创建canvas来转换图像
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      // 将图像绘制到canvas
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      // 释放原始Blob URL
+      URL.revokeObjectURL(img.src);
+
+      // 将canvas转换为PNG Blob
+      canvas.toBlob((pngBlob) => {
+        // 创建下载链接
+        const link = document.createElement("a");
+        link.style.display = "none";
+        link.download = filename;
+        link.href = URL.createObjectURL(pngBlob);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      }, 'image/png');
+
+      return;
+    } catch (error) {
+      console.error("WebP转PNG失败，回退到原格式:", error);
+      // 如果转换失败，回退到原始方式下载
+    }
+  }
+
+  // 非WebP图片或转换失败时的下载方式
+  const link = document.createElement("a");
+  link.style.display = "none";
+  link.download = filename;
+  link.href = URL.createObjectURL(blob);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
 
   // 创建一个 MutationObserver 来观察 DOM 变化
   const observer = new MutationObserver((mutations) => {
