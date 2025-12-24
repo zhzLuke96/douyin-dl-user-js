@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.2.7
+// @version         1.2.8
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -573,7 +573,7 @@
       }
       const { video } = this.current_media;
       // 第一个是压缩的，所以用第二个
-      const thumb = video.coverUrlList[1];
+      const thumb = video.originCoverUrlList[1] || video.originCoverUrlList[0];
       const filename_base = this._build_filename(this.current_media);
       this.downloader.download_file(thumb, `thumb_${filename_base}`);
     }
@@ -666,11 +666,16 @@
       const is_images = images && images.length > 0;
 
       const cover_details_html = (() => {
-        if (!video || !video.coverUrlList || video.coverUrlList.length === 0) {
+        if (
+          !video ||
+          !video.originCoverUrlList ||
+          video.originCoverUrlList.length === 0
+        ) {
           return "";
         }
         // 优先使用索引为 1 的高清封面，如果不存在则回退到索引 0
-        const cover_url = video.coverUrlList[1] || video.coverUrlList[0];
+        const cover_url =
+          video.originCoverUrlList[1] || video.originCoverUrlList[0];
         const filename_base = this._build_filename(current_media);
         const cover_filename = `cover_${filename_base}.jpeg`;
 
@@ -780,7 +785,7 @@
                   .map((img, idx) => {
                     const isVideo = !!img.video;
                     const thumbUrl = isVideo
-                      ? img.video.coverUrlList?.[0] || ""
+                      ? img.video.originCoverUrlList?.[0] || ""
                       : img.urlList?.[0] || "";
                     const downloadUrl = isVideo
                       ? img.video.playAddr?.[0]?.src || ""
