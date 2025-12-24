@@ -2,6 +2,9 @@
 
 抖音 web 端下载拓展
 
+- [greasyfork](https://greasyfork.org/zh-CN/scripts/522326-%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD)
+- [github](https://github.com/zhzLuke96/douyin-dl-user-js)
+
 ## Change log
 
 - 251224 1.2.8 修复封面下载地址
