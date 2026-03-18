@@ -121,6 +121,48 @@ const requires = this;
   }
   // #endregion
 
+  // #region 下载历史管理
+  class DownloadHistory {
+    static STORAGE_KEY = "__douyin-dl-history__";
+    static MAX_ITEMS = 50; // 最多保存50条记录
+
+    static get() {
+      try {
+        const data = localStorage.getItem(this.STORAGE_KEY);
+        return data ? JSON.parse(data) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    static add(media, downloadTime = Date.now()) {
+      const history = this.get();
+      const record = {
+        id: media.awemeId || `hist_${Date.now()}_${Math.random()}`,
+        desc: media.desc || "(无描述)",
+        shareUrl: media.shareInfo?.shareUrl || "",
+        downloadTime,
+        media: {
+          // 只保存必要字段，避免存储过大
+          awemeId: media.awemeId,
+          desc: media.desc,
+          shareUrl: media.shareInfo?.shareUrl,
+          authorNickname: media.authorInfo?.nickname,
+          // 可额外保存封面等，但注意localStorage容量限制
+        },
+      };
+      history.unshift(record); // 最新在前
+      if (history.length > this.MAX_ITEMS) history.pop();
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(history));
+      return record;
+    }
+
+    static clear() {
+      localStorage.removeItem(this.STORAGE_KEY);
+    }
+  }
+  // #endregion
+
   // #region API 拦截
   /**
    * XHR 拦截器工具类
@@ -550,7 +592,7 @@ const requires = this;
   }
   // #endregion
 
-  // #region UI related code
+  // #region Media Detail Model
 
   // 媒体详情 modal
   const MediaModalComponents = (() => {
@@ -940,17 +982,238 @@ const requires = this;
 
     return { App };
   })();
+  // #endregion
 
   // 配置 config modal
+  // #region Config Modal Components
   const ConfigModalComponents = (() => {
-    /**
-     * @type {import('preact/hooks')}
-     */
-    const { useState, useRef, useEffect } = requires?.htmPreact;
-    /**
-     * @type {import('preact').h}
-     */
-    const html = requires?.htmPreact?.html;
+    const { useState, useEffect } = requires?.htmPreact;
+    const { html } = requires?.htmPreact;
+
+    // 样式常量
+    const styles = {
+      container:
+        "display: flex; flex-direction: column; height: 70vh; width: 600px; overflow: hidden;",
+      nav: "display: flex; border-bottom: 1px solid #ccc; background: #f9f9f9;",
+      navBtn: (active) => `
+      padding: 10px 20px;
+      border: none;
+      background: ${active ? "#fff" : "transparent"};
+      cursor: pointer;
+      border-bottom: 2px solid ${active ? "#007bff" : "transparent"};
+      font-weight: ${active ? "bold" : "normal"};
+      color: ${active ? "#007bff" : "#333"};
+    `,
+      content: "flex-grow: 1; overflow-y: auto; padding: 20px;",
+      fieldset:
+        "border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; padding: 15px;",
+      legend: "font-weight: bold; padding: 0 5px; color: #555;",
+      row: "display: flex; align-items: center; margin-bottom: 12px;",
+      label: "width: 120px; flex-shrink: 0; color: #333;",
+      input:
+        "flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px;",
+      select:
+        "flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff;",
+      checkbox: "margin-right: 8px;",
+      btn: "padding: 6px 12px; background: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer;",
+      btnDanger:
+        "padding: 6px 12px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer;",
+      table: "width: 100%; font-size: 13px; border-collapse: collapse;",
+      th: "border: 1px solid #ddd; padding: 8px; background: #f5f5f5; text-align: left;",
+      td: "border: 1px solid #ddd; padding: 8px; word-break: break-all;",
+    };
+
+    // 基本设置页
+    const SettingsTab = ({ config, onConfigChange }) => {
+      const [filenameTemplate, setFilenameTemplate] = useState(
+        config.features.filename_template
+      );
+      const [videoMode, setVideoMode] = useState(
+        config.features.download_video_mode
+      );
+      const [convertWebP, setConvertWebP] = useState(
+        config.features.convert_webp_to_png
+      );
+
+      const handleSave = () => {
+        config.features.filename_template = filenameTemplate;
+        config.features.download_video_mode = videoMode;
+        config.features.convert_webp_to_png = convertWebP;
+        config.save();
+        alert("配置已保存");
+      };
+
+      return html`
+        <div>
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>文件命名</legend>
+            <div style=${styles.row}>
+              <label style=${styles.label}>模板：</label>
+              <input
+                type="text"
+                style=${styles.input}
+                value=${filenameTemplate}
+                onInput=${(e) => setFilenameTemplate(e.target.value)}
+                placeholder=${`例：\${nickname}_\${short_id}`}
+              />
+            </div>
+            <div style="font-size: 12px; color: #666; margin-top: 5px;">
+              可用变量：<code>nickname</code>, <code>short_id</code>,
+              <code>tags</code>, <code>desc</code>, <code>aweme_id</code>,
+              <code>create_date_YYYYMMDD</code>,
+              <code>now_YYYYMMDD_HHmmss</code> 等。
+            </div>
+          </fieldset>
+
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>下载视频分辨率策略</legend>
+            <div style=${styles.row}>
+              <label style=${styles.label}>选择模式：</label>
+              <select
+                style=${styles.select}
+                value=${videoMode}
+                onChange=${(e) => setVideoMode(e.target.value)}
+              >
+                <option value="default">默认（智能选择）</option>
+                <option value="max">最高清晰度</option>
+                <option value="min">最低清晰度</option>
+                <option value="1080P">1080P</option>
+                <option value="720P">720P</option>
+                <option value="540P">540P</option>
+                <option value="360P">360P</option>
+                <option value="2K">2K</option>
+              </select>
+            </div>
+            <div style="font-size: 12px; color: #666;">
+              注意：实际下载时根据可用地址匹配，若不支持所选分辨率则回退。
+            </div>
+          </fieldset>
+
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>其他选项</legend>
+            <div style=${styles.row}>
+              <input
+                type="checkbox"
+                style=${styles.checkbox}
+                checked=${convertWebP}
+                onChange=${(e) => setConvertWebP(e.target.checked)}
+                id="webpConvert"
+              />
+              <label for="webpConvert">将 WebP 图片转换为 PNG 格式下载</label>
+            </div>
+          </fieldset>
+
+          <div style="text-align: right;">
+            <button style=${styles.btn} onClick=${handleSave}>保存设置</button>
+          </div>
+        </div>
+      `;
+    };
+
+    // 下载历史页
+    const HistoryTab = () => {
+      const [history, setHistory] = useState([]);
+
+      useEffect(() => {
+        loadHistory();
+      }, []);
+
+      const loadHistory = () => {
+        setHistory(DownloadHistory.get());
+      };
+
+      const clearHistory = () => {
+        if (confirm("确定清空所有下载历史吗？")) {
+          DownloadHistory.clear();
+          setHistory([]);
+        }
+      };
+
+      const formatTime = (ts) => new Date(ts).toLocaleString();
+
+      return html`
+        <div>
+          <div
+            style="display: flex; justify-content: space-between; margin-bottom: 15px;"
+          >
+            <h3 style="margin: 0;">下载记录（最多50条）</h3>
+            <button style=${styles.btnDanger} onClick=${clearHistory}>
+              清空历史
+            </button>
+          </div>
+          ${history.length === 0
+            ? html`<p style="color: #999; text-align: center;">暂无下载记录</p>`
+            : html`
+                <table style=${styles.table}>
+                  <thead>
+                    <tr>
+                      <th style=${styles.th}>描述</th>
+                      <th style=${styles.th}>分享链接</th>
+                      <th style=${styles.th}>下载时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${history.map(
+                      (item) => html`
+                        <tr>
+                          <td style=${styles.td}>${item.desc || "-"}</td>
+                          <td style=${styles.td}>
+                            <a
+                              href=${item.shareUrl}
+                              target="_blank"
+                              rel="noopener"
+                              >链接</a
+                            >
+                          </td>
+                          <td style=${styles.td}>
+                            ${formatTime(item.downloadTime)}
+                          </td>
+                        </tr>
+                      `
+                    )}
+                  </tbody>
+                </table>
+              `}
+        </div>
+      `;
+    };
+
+    // 主组件
+    const App = ({ config, onClose }) => {
+      const [activeTab, setActiveTab] = useState("settings");
+
+      const tabs = [
+        { id: "settings", title: "基本设置" },
+        { id: "history", title: "下载历史" },
+      ];
+
+      return html`
+        <div style=${styles.container}>
+          <nav style=${styles.nav}>
+            ${tabs.map(
+              (tab) => html`
+                <button
+                  style=${styles.navBtn(activeTab === tab.id)}
+                  onClick=${() => setActiveTab(tab.id)}
+                >
+                  ${tab.title}
+                </button>
+              `
+            )}
+          </nav>
+          <div style=${styles.content}>
+            ${activeTab === "settings"
+              ? html`<${SettingsTab}
+                  config=${config}
+                  onConfigChange=${() => {}}
+                />`
+              : html`<${HistoryTab} />`}
+          </div>
+        </div>
+      `;
+    };
+
+    return { App };
   })();
   // #endregion
 
@@ -1062,6 +1325,10 @@ const requires = this;
       if (baseName.length > filename_max_length) {
         baseName = baseName.slice(0, filename_max_length);
       }
+
+      // NOTE: 文件名截断问题，如果包含 "." 可能导致浏览器误判后缀名 #41
+      baseName = baseName.replace(/\./g, "_");
+
       return baseName;
     }
 
@@ -1214,6 +1481,9 @@ const requires = this;
         if (downloadedCount === 0 && images.length > 0) {
           alert("[dy-dl]图集下载失败，未找到有效媒体链接。");
         }
+        if (downloadedCount) {
+          DownloadHistory.add(this.current_media);
+        }
         return;
       } else {
         // 单视频或单图片（老版本可能直接在video字段放图片信息，但新版通常是images）
@@ -1224,6 +1494,7 @@ const requires = this;
             filename_base,
             video_urls
           );
+          DownloadHistory.add(this.current_media);
           return;
         }
       }
@@ -1283,10 +1554,26 @@ const requires = this;
         modal.root
       );
     }
-
-    // 打开 配置 modal
     async open_config_modal() {
-      // TODO
+      // 创建模态框
+      const modal = new Modal((root, overlay) => {
+        overlay.style.zIndex = 999999;
+        const $fullscreenElement = document.fullscreenElement;
+        if ($fullscreenElement) {
+          $fullscreenElement.appendChild(overlay);
+        }
+      });
+      modal.root.style.width = "650px";
+      modal.root.style.maxWidth = "90vw";
+      modal.root.style.background = "#fff";
+      modal.root.style.borderRadius = "8px";
+      modal.root.style.overflow = "hidden";
+
+      const { html, render } = requires.htmPreact;
+      render(
+        html`<${ConfigModalComponents.App} config=${Config.global} />`,
+        modal.root
+      );
     }
 
     init() {
@@ -1575,6 +1862,12 @@ const requires = this;
                 Config.global.save();
               });
               return encode_to_png_switch;
+            },
+          },
+          {
+            label: "设置",
+            callback: () => {
+              this.mediaHandler.open_config_modal();
             },
           },
           {
