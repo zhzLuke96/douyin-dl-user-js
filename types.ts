@@ -2464,3 +2464,1437 @@ export namespace DouyinPlayer {
     }
     
 }
+
+// prettier-ignore
+export namespace DouyinResponses {
+
+    // GET https://www-hj.douyin.com/aweme/v1/web/aweme/post/?xxx
+    export namespace GET_aweme_post {
+        export interface Root {
+            status_code:           number;
+            min_cursor:            number;
+            max_cursor:            number;
+            has_more:              number;
+            aweme_list:            AwemeList[];
+            time_list:             null;
+            log_pb:                LogPb;
+            has_locate_item:       boolean;
+            locate_item_available: boolean;
+            locate_item_cursor:    number;
+            request_item_cursor:   number;
+            post_serial:           number;
+            replace_series_cover:  number;
+        }
+        
+        export interface AwemeList {
+            aweme_id:                            string;
+            desc:                                string;
+            create_time:                         number;
+            author:                              Author;
+            music:                               Music;
+            ai_prompt:                           AIPrompt;
+            video:                               Video;
+            share_url:                           string;
+            user_digged:                         number;
+            statistics:                          Statistics;
+            status:                              Status;
+            can_cache_to_local:                  boolean;
+            text_extra:                          TextExtra[];
+            is_top:                              number;
+            aweme_listen_struct:                 AwemeListenStruct;
+            share_info:                          AwemeListShareInfo;
+            follow_shot_assets:                  null;
+            video_labels:                        null;
+            is_moment_history:                   number;
+            is_ads:                              boolean;
+            item_aigc_follow_shot:               number;
+            duration:                            number;
+            aweme_type:                          number;
+            nearby_hot_comment:                  null;
+            enable_decorated_emoji:              boolean;
+            image_infos:                         null;
+            risk_infos:                          RiskInfos;
+            cf_assets_type:                      number;
+            origin_duet_resource_uri:            string;
+            position:                            null;
+            uniqid_position:                     null;
+            comment_list:                        null;
+            author_user_id:                      number;
+            sec_item_id:                         string;
+            geofencing:                          any[];
+            interest_points:                     null;
+            series_basic_info:                   ImageComment;
+            region:                              string;
+            video_text:                          null;
+            ent_log_extra:                       EntLogExtra;
+            collect_stat:                        number;
+            label_top_text:                      null;
+            promotions:                          any[];
+            group_id:                            string;
+            prevent_download:                    boolean;
+            nickname_position:                   null;
+            challenge_position:                  null;
+            is_moment_story:                     number;
+            flash_mob_trends:                    number;
+            trends_infos:                        null;
+            long_video:                          null;
+            entertainment_video_paid_way:        EntertainmentVideoPaidWay;
+            entertainment_video_type:            number;
+            chapter_bar_color:                   null;
+            effect_inflow_effects:               null;
+            interaction_stickers:                null;
+            component_control:                   ComponentControl;
+            origin_comment_ids:                  null;
+            commerce_config_data:                null;
+            ai_follow_images:                    null;
+            video_control:                       VideoControl;
+            aweme_control:                       AwemeControl;
+            is_25_story:                         number;
+            product_genre_info:                  ProductGenreInfo;
+            anchor_info?:                        AnchorInfo;
+            original_anchor_type?:               number;
+            is_from_ad_auth:                     boolean;
+            anchors:                             null;
+            hybrid_label:                        null;
+            geofencing_regions:                  null;
+            follow_shoot_clip_info:              FollowShootClipInfo;
+            aweme_acl?:                          AwemeACL;
+            mv_info:                             null;
+            is_story:                            number;
+            trends_event_track:                  TrendsEventTrack;
+            aweme_type_tags:                     string;
+            is_subtitled?:                       number;
+            cover_labels:                        null;
+            douplus_user_type:                   number;
+            game_tag_info:                       GameTagInfo;
+            guide_btn_type:                      number;
+            select_anchor_expanded_content:      number;
+            publish_plus_alienation:             PublishPlusAlienation;
+            images:                              null;
+            relation_labels:                     null;
+            is_new_text_mode:                    number;
+            impression_data:                     ImpressionData;
+            shoot_way:                           ShootWay;
+            personal_page_botton_diagnose_style: number;
+            libfinsert_task_id:                  string;
+            social_tag_list:                     null;
+            suggest_words?:                      SuggestWords;
+            show_follow_button:                  ImageComment;
+            duet_aggregate_in_music_tab:         boolean;
+            is_duet_sing:                        boolean;
+            comment_permission_info:             CommentPermissionInfo;
+            original_images:                     null;
+            series_paid_info:                    SeriesPaidInfo;
+            img_bitrate:                         null;
+            comment_gid:                         number;
+            image_album_music_info:              ImageAlbumMusicInfo;
+            video_tag:                           VideoTag[];
+            is_collects_selected:                number;
+            chapter_list:                        null;
+            feed_comment_config:                 FeedCommentConfig;
+            is_image_beat:                       boolean;
+            dislike_dimension_list:              null;
+            standard_bar_info_list:              null;
+            photo_search_entrance:               PhotoSearchEntrance;
+            danmaku_control:                     DanmakuControl;
+            is_life_item:                        boolean;
+            image_list:                          null;
+            component_info_v2:                   ComponentInfoV2;
+            item_warn_notification:              ItemWarnNotification;
+            origin_text_extra:                   null;
+            disable_relation_bar:                number;
+            packed_clips:                        null;
+            vtag_search?:                        VtagSearch;
+            author_mask_tag:                     number;
+            user_recommend_status:               number;
+            collection_corner_mark:              number;
+            is_share_post:                       boolean;
+            image_comment:                       ImageComment;
+            visual_search_info:                  VisualSearchInfo;
+            tts_id_list:                         null;
+            ref_tts_id_list:                     null;
+            voice_modify_id_list:                null;
+            ref_voice_modify_id_list:            null;
+            authentication_token:                string;
+            video_game_data_channel_config:      ImageComment;
+            dislike_dimension_list_v2:           null;
+            distribute_circle:                   DistributeCircle;
+            image_crop_ctrl:                     number;
+            yumme_recreason:                     null;
+            slides_music_beats:                  null;
+            jump_tab_info_list:                  null;
+            media_type:                          number;
+            play_progress:                       PlayProgress;
+            reply_smart_emojis:                  null;
+            activity_video_type:                 number;
+            boost_status:                        number;
+            create_scale_type:                   CreateScaleType[];
+            entertainment_product_info:          EntertainmentProductInfo;
+            caption:                             string;
+            item_title:                          string;
+            is_use_music:                        boolean;
+            original:                            number;
+            xigua_base_info:                     XiguaBaseInfo;
+            mark_largely_following:              boolean;
+            friend_recommend_info:               FriendRecommendInfo;
+            enable_comment_sticker_rec:          boolean;
+            video_share_edit_status:             number;
+            is_24_story:                         number;
+            life_anchor_show_extra?:             LifeAnchorShowExtra;
+            horizontal_type?:                    number;
+            main_arch_common?:                   string;
+            galileo_pad_textcrop?:               GalileoPadTextcrop;
+        }
+        
+        export interface AIPrompt {
+            text:   Text;
+            source: number;
+        }
+        
+        export enum Text {
+            点击开启AI创作 = "点击开启AI创作",
+        }
+        
+        export interface AnchorInfo {
+            type:       number;
+            id:         string;
+            icon:       Icon;
+            title:      string;
+            open_url:   string;
+            web_url:    string;
+            mp_url:     string;
+            title_tag:  string;
+            content:    TrendsEventTrack;
+            style_info: StyleInfo;
+            extra:      string;
+            log_extra:  string;
+        }
+        
+        export enum TrendsEventTrack {
+            Empty = "{}",
+            HasDanmaku1 = "{\"has_danmaku\":1}",
+        }
+        
+        export interface Icon {
+            uri:      string;
+            url_list: string[];
+            width:    number;
+            height:   number;
+            url_key?: string;
+        }
+        
+        export interface StyleInfo {
+            default_icon: string;
+            scene_icon:   string;
+            extra:        string;
+        }
+        
+        export interface Author {
+            uid:                                        string;
+            signature_extra:                            null;
+            nickname:                                   Nickname;
+            personal_tag_list:                          null;
+            homepage_bottom_toast:                      null;
+            avatar_thumb:                               Icon;
+            batch_unfollow_contain_tabs:                null;
+            not_seen_item_id_list:                      null;
+            follow_status:                              number;
+            contrail_list:                              null;
+            story25_comment:                            number;
+            data_label_list:                            null;
+            custom_verify:                              string;
+            follower_list_secondary_information_struct: null;
+            display_info:                               null;
+            card_sort_priority:                         null;
+            private_relation_list:                      null;
+            user_tags:                                  null;
+            share_info:                                 AuthorShareInfo;
+            can_set_geofencing:                         null;
+            sec_uid:                                    string;
+            need_points:                                null;
+            enterprise_verify_reason:                   string;
+            is_ad_fake:                                 boolean;
+            story_interactive:                          number;
+            link_item_list:                             null;
+            card_entries:                               null;
+            creator_tag_list:                           null;
+            user_permissions:                           null;
+            text_extra:                                 null;
+            card_entries_not_display:                   null;
+            prevent_download:                           boolean;
+            special_people_labels:                      null;
+            white_cover_url:                            null;
+            endorsement_info_list:                      null;
+            follower_status:                            number;
+            profile_mob_params:                         null;
+            familiar_visitor_user:                      null;
+            avatar_schema_list:                         null;
+            cover_url:                                  Icon[];
+            cf_list:                                    null;
+            im_role_ids:                                null;
+            not_seen_item_id_list_v2:                   null;
+            offline_info_list:                          null;
+            risk_notice_text:                           string;
+            ban_user_functions:                         null;
+            story_ttl:                                  number;
+            verification_permission_ids:                null;
+            profile_component_disabled:                 null;
+            identity_labels:                            null;
+            interest_tags:                              null;
+            batch_unfollow_relation_desc:               null;
+        }
+        
+        export enum Nickname {
+            Master = "Master",
+        }
+        
+        export interface AuthorShareInfo {
+            share_url:          string;
+            share_weibo_desc:   string;
+            share_desc:         string;
+            share_title:        string;
+            share_qrcode_url:   Icon;
+            share_title_myself: string;
+            share_title_other:  string;
+            share_desc_info:    string;
+        }
+        
+        export interface AwemeACL {
+            download_mask_panel: DownloadMaskPanel;
+        }
+        
+        export interface DownloadMaskPanel {
+            code:      number;
+            show_type: number;
+        }
+        
+        export interface AwemeControl {
+            can_forward:      boolean;
+            can_share:        boolean;
+            can_comment:      boolean;
+            can_show_comment: boolean;
+        }
+        
+        export interface AwemeListenStruct {
+            trace_info: string;
+        }
+        
+        export interface CommentPermissionInfo {
+            comment_permission_status: number;
+            can_comment:               boolean;
+            item_detail_entry:         boolean;
+            press_entry:               boolean;
+            toast_guide:               boolean;
+        }
+        
+        export interface ComponentControl {
+            data_source_url: DataSourceURL;
+        }
+        
+        export enum DataSourceURL {
+            AwemeV1WebAwemePost = "/aweme/v1/web/aweme/post/",
+        }
+        
+        export enum ComponentInfoV2 {
+            DescLinesLimit0HideMarqueeFalse = "{\"desc_lines_limit\":0,\"hide_marquee\":false}",
+        }
+        
+        export enum CreateScaleType {
+            FH = "f_h",
+            FW = "f_w",
+        }
+        
+        export interface DanmakuControl {
+            enable_danmaku:        boolean;
+            post_privilege_level:  number;
+            is_post_denied:        boolean;
+            post_denied_reason:    string;
+            skip_danmaku:          boolean;
+            danmaku_cnt:           number;
+            activities:            Activity[];
+            pass_through_params:   TrendsEventTrack;
+            smart_mode_decision:   number;
+            first_danmaku_offset?: number;
+            last_danmaku_offset?:  number;
+        }
+        
+        export interface Activity {
+            id:   number;
+            type: number;
+        }
+        
+        export interface DistributeCircle {
+            distribute_type:          number;
+            campus_block_interaction: boolean;
+            is_campus:                boolean;
+        }
+        
+        export interface EntLogExtra {
+            log_extra: string;
+        }
+        
+        export interface EntertainmentProductInfo {
+            sub_title:   null;
+            market_info: MarketInfo;
+        }
+        
+        export interface MarketInfo {
+            limit_free:    LimitFree;
+            marketing_tag: null;
+        }
+        
+        export interface LimitFree {
+            in_free: boolean;
+        }
+        
+        export interface EntertainmentVideoPaidWay {
+            paid_ways:               any[];
+            paid_type:               number;
+            enable_use_new_ent_data: boolean;
+        }
+        
+        export interface FeedCommentConfig {
+            input_config_text:   string;
+            author_audit_status: number;
+            common_flags:        string;
+        }
+        
+        export interface FollowShootClipInfo {
+            clip_video_all:      number;
+            clip_from_platform?: number;
+            origin_clip_id?:     number;
+            clip_from_user?:     number;
+        }
+        
+        export interface FriendRecommendInfo {
+            friend_recommend_source:              number;
+            label_user_list:                      null;
+            disable_friend_recommend_guide_label: boolean;
+        }
+        
+        export interface GalileoPadTextcrop {
+            ipad_d_h_cut_ratio:    number[] | null;
+            ipad_d_v_cut_ratio:    number[] | null;
+            android_d_h_cut_ratio: number[] | null;
+            android_d_v_cut_ratio: number[] | null;
+            version:               number;
+        }
+        
+        export interface GameTagInfo {
+            is_game: boolean;
+        }
+        
+        export interface ImageAlbumMusicInfo {
+            begin_time: number;
+            end_time:   number;
+            volume:     number;
+        }
+        
+        export interface ImageComment {
+        }
+        
+        export interface ImpressionData {
+            group_id_list_a:   any[];
+            group_id_list_b:   number[];
+            similar_id_list_a: null;
+            similar_id_list_b: null;
+            group_id_list_c:   any[];
+            group_id_list_d:   any[];
+        }
+        
+        export interface ItemWarnNotification {
+            type:    number;
+            show:    boolean;
+            content: string;
+        }
+        
+        export interface LifeAnchorShowExtra {
+            anchor_type:     number;
+            should_show:     boolean;
+            has_anchor_info: boolean;
+            extra:           Extra;
+        }
+        
+        export enum Extra {
+            IsCommerceIntention0IsNewAnchorFrame0 = "{\"is_commerce_intention\":\"0\",\"is_new_anchor_frame\":\"0\"}",
+        }
+        
+        export interface Music {
+            id:                                 number;
+            id_str:                             string;
+            title:                              string;
+            author:                             string;
+            album:                              string;
+            cover_hd:                           Icon;
+            cover_large:                        Icon;
+            cover_medium:                       Icon;
+            cover_thumb:                        Icon;
+            play_url:                           Icon;
+            schema_url:                         string;
+            source_platform:                    number;
+            start_time:                         number;
+            end_time:                           number;
+            duration:                           number;
+            extra:                              string;
+            user_count:                         number;
+            position:                           null;
+            collect_stat:                       number;
+            status:                             number;
+            offline_desc:                       string;
+            owner_id?:                          string;
+            owner_nickname:                     string;
+            is_original:                        boolean;
+            mid:                                string;
+            binded_challenge_id:                number;
+            redirect:                           boolean;
+            is_restricted:                      boolean;
+            author_deleted:                     boolean;
+            is_del_video:                       boolean;
+            is_video_self_see:                  boolean;
+            owner_handle:                       string;
+            author_position:                    null;
+            prevent_download:                   boolean;
+            unshelve_countries:                 null;
+            prevent_item_download_status:       number;
+            external_song_info:                 any[];
+            sec_uid?:                           string;
+            avatar_thumb?:                      Icon;
+            avatar_medium?:                     Icon;
+            avatar_large?:                      Icon;
+            preview_start_time:                 number;
+            preview_end_time:                   number;
+            is_commerce_music:                  boolean;
+            is_original_sound:                  boolean;
+            audition_duration:                  number;
+            shoot_duration:                     number;
+            reason_type:                        number;
+            artists:                            Artist[];
+            lyric_short_position:               null;
+            mute_share:                         boolean;
+            tag_list:                           null;
+            dmv_auto_show:                      boolean;
+            is_pgc:                             boolean;
+            is_matched_metadata:                boolean;
+            is_audio_url_with_cookie:           boolean;
+            matched_pgc_sound?:                 MatchedPgcSound;
+            music_chart_ranks:                  null;
+            can_background_play:                boolean;
+            music_status:                       number;
+            video_duration:                     number;
+            pgc_music_type:                     number;
+            author_status?:                     number;
+            search_impr:                        SearchImpr;
+            song?:                              Song;
+            artist_user_infos:                  null;
+            dsp_status:                         number;
+            musician_user_infos:                null;
+            music_collect_count:                number;
+            music_cover_atmosphere_color_value: string;
+            show_origin_clip:                   boolean;
+            strong_beat_url?:                   Icon;
+            cover_color_hsv?:                   CoverColorHsv;
+            music_image_beats?:                 MusicImageBeats;
+        }
+        
+        export interface Artist {
+            uid:         string;
+            sec_uid:     string;
+            nick_name:   string;
+            handle:      string;
+            avatar:      AnimatedCover;
+            is_verified: boolean;
+            enter_type:  number;
+        }
+        
+        export interface AnimatedCover {
+            uri:      string;
+            url_list: string[];
+        }
+        
+        export interface CoverColorHsv {
+            h: number;
+            s: number;
+            v: number;
+        }
+        
+        export interface MatchedPgcSound {
+            author:       string;
+            title:        string;
+            mixed_title:  string;
+            mixed_author: string;
+            cover_medium: Icon;
+        }
+        
+        export interface MusicImageBeats {
+            music_image_beats_url: Icon;
+        }
+    
+        
+        export interface SearchImpr {
+            entity_id: string;
+        }
+        
+        export interface Song {
+            id:              number;
+            id_str:          string;
+            artists:         null;
+            chorus_v3_infos: null;
+            title?:          string;
+            chorus?:         Chorus;
+        }
+        
+        export interface Chorus {
+            start_ms:    number;
+            duration_ms: number;
+        }
+        
+        export interface PhotoSearchEntrance {
+            ecom_type: number;
+        }
+        
+        export interface PlayProgress {
+            play_progress:      number;
+            last_modified_time: number;
+        }
+        
+        export interface ProductGenreInfo {
+            product_genre_type:          number;
+            material_genre_sub_type_set: number[];
+            special_info:                SpecialInfo;
+        }
+        
+        export interface SpecialInfo {
+            recommend_group_name: number;
+        }
+        
+        export interface PublishPlusAlienation {
+            alienation_type: number;
+        }
+        
+        export interface RiskInfos {
+            vote:      boolean;
+            warn:      boolean;
+            risk_sink: boolean;
+            type:      number;
+            content:   string;
+        }
+        
+        export interface SeriesPaidInfo {
+            series_paid_status: number;
+            item_price:         number;
+        }
+        
+        export interface AwemeListShareInfo {
+            share_url:       string;
+            share_link_desc: string;
+        }
+        
+        export enum ShootWay {
+            DirectShoot = "direct_shoot",
+        }
+        
+        export interface Statistics {
+            recommend_count: number;
+            comment_count:   number;
+            digg_count:      number;
+            admire_count:    number;
+            play_count:      number;
+            share_count:     number;
+            collect_count:   number;
+        }
+        
+        export interface Status {
+            not_allow_soft_del_reason:      NotAllowSoftDelReason;
+            is_delete:                      boolean;
+            allow_share:                    boolean;
+            review_result:                  ReviewResult;
+            allow_friend_recommend_guide:   boolean;
+            part_see:                       number;
+            private_status:                 number;
+            listen_video_status:            number;
+            in_reviewing:                   boolean;
+            allow_self_recommend_to_friend: boolean;
+            allow_friend_recommend:         boolean;
+            is_prohibited:                  boolean;
+            enable_soft_delete:             number;
+        }
+        
+        export enum NotAllowSoftDelReason {
+            Ab = "ab",
+        }
+        
+        export interface ReviewResult {
+            review_status: number;
+        }
+        
+        export interface SuggestWords {
+            suggest_words: SuggestWord[];
+        }
+        
+        export interface SuggestWord {
+            words:      Word[];
+            scene:      string;
+            icon_url:   string;
+            hint_text:  string;
+            extra_info: string;
+        }
+        
+        export interface Word {
+            word:    string;
+            word_id: string;
+            info:    string;
+        }
+        
+        export interface TextExtra {
+            start:         number;
+            end:           number;
+            type:          number;
+            hashtag_name:  string;
+            hashtag_id:    string;
+            is_commerce:   boolean;
+            caption_start: number;
+            caption_end:   number;
+        }
+        
+        export interface Video {
+            play_addr:         PlayAddr;
+            cover:             Icon;
+            height:            number;
+            width:             number;
+            dynamic_cover:     Icon;
+            origin_cover:      Icon;
+            ratio:             Ratio;
+            format:            Format;
+            big_thumbs:        BigThumb[];
+            meta:              string;
+            bit_rate:          BitRate[];
+            duration:          number;
+            bit_rate_audio:    BitRateAudio[] | null;
+            gaussian_cover:    Icon;
+            play_addr_265:     PlayAddr;
+            audio:             Audio;
+            play_addr_h264:    PlayAddr;
+            raw_cover:         Icon;
+            animated_cover:    AnimatedCover;
+            is_source_HDR:     number;
+            video_model:       string;
+            horizontal_type?:  number;
+            is_long_video?:    number;
+            use_static_cover?: boolean;
+        }
+        
+        export interface Audio {
+            original_sound_infos: null;
+        }
+        
+        export interface BigThumb {
+            img_num:    number;
+            uri:        string;
+            img_url:    string;
+            img_x_size: number;
+            img_y_size: number;
+            img_x_len:  number;
+            img_y_len:  number;
+            duration:   number;
+            interval:   number;
+            fext:       Fext;
+            uris:       string[];
+            img_urls:   string[];
+        }
+        
+        export enum Fext {
+            Jpg = "jpg",
+        }
+        
+        export interface BitRate {
+            gear_name:    string;
+            quality_type: number;
+            bit_rate:     number;
+            play_addr:    PlayAddr;
+            is_h265:      number;
+            is_bytevc1:   number;
+            HDR_type:     string;
+            HDR_bit:      string;
+            FPS:          number;
+            video_extra:  string;
+            format:       Format;
+        }
+        
+        export enum Format {
+            Dash = "dash",
+            Mp4 = "mp4",
+        }
+        
+        export interface PlayAddr {
+            uri:        string;
+            url_list:   string[];
+            width:      number;
+            height:     number;
+            url_key:    string;
+            data_size?: number;
+            file_hash:  string;
+            file_cs?:   string;
+        }
+        
+        export interface BitRateAudio {
+            audio_meta:    AudioMeta;
+            audio_quality: number;
+            audio_extra:   string;
+        }
+        
+        export interface AudioMeta {
+            url_list:     URLList;
+            encoded_type: EncodedType;
+            media_type:   MediaType;
+            logo_type:    string;
+            quality:      string;
+            quality_desc: string;
+            format:       Format;
+            bitrate:      number;
+            codec_type:   CodecType;
+            size:         number;
+            fps:          number;
+            file_id:      string;
+            file_hash:    string;
+            sub_info:     string;
+        }
+        
+        export enum CodecType {
+            Bytevc1 = "bytevc1",
+            H264 = "h264",
+        }
+        
+        export enum EncodedType {
+            Normal = "normal",
+        }
+        
+        export enum MediaType {
+            Audio = "audio",
+        }
+        
+        export interface URLList {
+            main_url:     string;
+            backup_url:   string;
+            fallback_url: string;
+        }
+        
+        export enum Ratio {
+            The540P = "540p",
+            The720P = "720p",
+        }
+        
+        export interface VideoControl {
+            allow_download:             boolean;
+            share_type:                 number;
+            show_progress_bar:          number;
+            draft_progress_bar:         number;
+            allow_duet:                 boolean;
+            allow_react:                boolean;
+            prevent_download_type:      number;
+            allow_dynamic_wallpaper:    boolean;
+            timer_status:               number;
+            allow_music:                boolean;
+            allow_stitch:               boolean;
+            allow_douplus:              boolean;
+            allow_share:                boolean;
+            share_grayed:               boolean;
+            download_ignore_visibility: boolean;
+            duet_ignore_visibility:     boolean;
+            share_ignore_visibility:    boolean;
+            download_info:              DownloadInfo;
+            duet_info:                  DuetInfo;
+            allow_record:               boolean;
+            disable_record_reason:      string;
+            timer_info:                 TimerInfo;
+        }
+        
+        export interface DownloadInfo {
+            level:      number;
+            fail_info?: DownloadInfoFailInfo;
+        }
+        
+        export interface DownloadInfoFailInfo {
+            code:   number;
+            reason: Reason;
+            msg:    string;
+        }
+        
+        export enum Reason {
+            IsolationContent = "isolation_content",
+        }
+        
+        export interface DuetInfo {
+            level:      number;
+            fail_info?: DuetInfoFailInfo;
+        }
+        
+        export interface DuetInfoFailInfo {
+            code:   number;
+            reason: string;
+        }
+        
+        export interface TimerInfo {
+            public_time?:  number;
+            timer_status?: number;
+        }
+        
+        export interface VideoTag {
+            tag_id:   number;
+            tag_name: string;
+            level:    number;
+        }
+        
+        export interface VisualSearchInfo {
+            visual_search_longpress?: number;
+            is_show_img_entrance:     boolean;
+            is_ecom_img:              boolean;
+            is_high_accuracy_ecom:    boolean;
+            is_high_recall_ecom:      boolean;
+        }
+        
+        export interface VtagSearch {
+            vtag_enable?:         boolean;
+            vtag_delay_ts?:       number;
+            default_vtag_data?:   string;
+            default_vtag_enable?: boolean;
+        }
+        
+        export interface XiguaBaseInfo {
+            status:              number;
+            star_altar_order_id: number;
+            star_altar_type:     number;
+            item_id:             number;
+        }
+        
+        export interface LogPb {
+            impr_id: string;
+        }
+        
+    }
+
+    // GET https://www.douyin.com/aweme/v1/web/general/search/single/?xxx
+    export namespace GET_search_single {
+        export interface Root {
+            status_code:           number;
+            data:                  Datum[];
+            qc:                    string;
+            cursor:                number;
+            has_more:              number;
+            ad_info:               AdInfo;
+            extra:                 Extra;
+            log_pb:                LogPb;
+            guide_search_words:    null;
+            global_doodle_config:  GlobalDoodleConfig;
+            polling_time:          number;
+            time_cost:             TimeCost;
+            ops:                   null;
+            multi_columns_info:    MultiColumnsInfo;
+            douyin_ai_search_info: DouyinAISearchInfo;
+            path:                  string;
+            mock_recall_path:      string;
+        }
+        
+        export interface AdInfo {
+        }
+        
+        export interface Datum {
+            type:                number;
+            aweme_info:          AwemeInfo;
+            doc_type:            number;
+            sub_card_list:       null;
+            provider_doc_id:     number;
+            provider_doc_id_str: string;
+            tab:                 null;
+            show_tab:            null;
+            debug_diff_info:     AdInfo;
+            aweme_list:          null;
+            ecom_goods_list:     null;
+            music_info_list:     null;
+            card_unique_name:    string;
+            ops:                 null;
+            qishui_music_list:   null;
+        }
+        
+        export interface AwemeInfo {
+            aweme_id:                   string;
+            desc:                       string;
+            create_time:                number;
+            author:                     Author;
+            music:                      Music;
+            cha_list:                   null;
+            video:                      Video;
+            user_digged:                number;
+            statistics:                 Statistics;
+            status:                     Status;
+            text_extra:                 TextExtra[];
+            is_top:                     number;
+            share_info:                 ShareInfo;
+            video_labels:               null;
+            aweme_type:                 number;
+            image_infos:                null;
+            position:                   null;
+            uniqid_position:            null;
+            comment_list:               null;
+            author_user_id:             number;
+            geofencing:                 null;
+            video_text:                 null;
+            collect_stat:               number;
+            label_top_text:             null;
+            promotions:                 null;
+            group_id:                   string;
+            prevent_download:           boolean;
+            nickname_position:          null;
+            challenge_position:         null;
+            long_video:                 null;
+            interaction_stickers:       null;
+            origin_comment_ids:         null;
+            commerce_config_data:       null;
+            video_control:              VideoControl;
+            anchors:                    null;
+            rawdata:                    string;
+            hybrid_label:               null;
+            geofencing_regions:         null;
+            cover_labels:               null;
+            images:                     Image[] | null;
+            relation_labels:            null;
+            impression_data:            ImpressionData;
+            social_tag_list:            null;
+            suggest_words:              SuggestWords;
+            original_images:            null;
+            img_bitrate:                null;
+            video_tag:                  null;
+            chapter_list:               null;
+            dislike_dimension_list:     null;
+            standard_bar_info_list:     null;
+            image_list:                 null;
+            origin_text_extra:          null;
+            packed_clips:               null;
+            tts_id_list:                null;
+            ref_tts_id_list:            null;
+            voice_modify_id_list:       null;
+            ref_voice_modify_id_list:   null;
+            dislike_dimension_list_v2:  null;
+            yumme_recreason:            null;
+            slides_music_beats:         null;
+            jump_tab_info_list:         null;
+            media_type:                 number;
+            reply_smart_emojis:         null;
+            create_scale_type:          null;
+            entertainment_product_info: EntertainmentProductInfo;
+            trends_infos:               null;
+            chapter_bar_color:          null;
+            mv_info:                    null;
+            interest_points:            null;
+            nearby_hot_comment:         null;
+            ai_follow_images:           null;
+            follow_shot_assets:         null;
+            effect_inflow_effects:      null;
+            image_follow_shot_assets:   null;
+            danmaku_control?:           DanmakuControl;
+        }
+        
+        export interface Author {
+            uid:                                        string;
+            nickname:                                   string;
+            avatar_thumb:                               AvatarThumb;
+            follow_status:                              number;
+            follower_count:                             number;
+            total_favorited:                            number;
+            custom_verify:                              string;
+            room_id:                                    number;
+            enterprise_verify_reason:                   string;
+            followers_detail:                           null;
+            platform_sync_info:                         null;
+            secret:                                     number;
+            geofencing:                                 null;
+            follower_status:                            number;
+            cover_url:                                  null;
+            item_list:                                  null;
+            new_story_cover:                            null;
+            type_label:                                 null;
+            ad_cover_url:                               null;
+            relative_users:                             null;
+            cha_list:                                   null;
+            sec_uid:                                    string;
+            need_points:                                null;
+            homepage_bottom_toast:                      null;
+            room_data:                                  string;
+            can_set_geofencing:                         null;
+            room_id_str:                                string;
+            white_cover_url:                            null;
+            user_tags:                                  null;
+            ban_user_functions:                         null;
+            card_entries:                               null;
+            display_info:                               null;
+            card_entries_not_display:                   null;
+            card_sort_priority:                         null;
+            interest_tags:                              null;
+            link_item_list:                             null;
+            user_permissions:                           null;
+            offline_info_list:                          null;
+            signature_extra:                            null;
+            personal_tag_list:                          null;
+            cf_list:                                    null;
+            im_role_ids:                                null;
+            not_seen_item_id_list:                      null;
+            follower_list_secondary_information_struct: null;
+            endorsement_info_list:                      null;
+            text_extra:                                 null;
+            contrail_list:                              null;
+            data_label_list:                            null;
+            not_seen_item_id_list_v2:                   null;
+            special_people_labels:                      null;
+            familiar_visitor_user:                      null;
+            avatar_schema_list:                         null;
+            profile_mob_params:                         null;
+            verification_permission_ids:                null;
+            batch_unfollow_relation_desc:               null;
+            batch_unfollow_contain_tabs:                null;
+            creator_tag_list:                           null;
+            account_cert_info?:                         string;
+            private_relation_list:                      null;
+            identity_labels:                            null;
+            profile_component_disabled:                 null;
+        }
+        
+        export interface AvatarThumb {
+            uri:      string;
+            url_list: string[] | null;
+            width:    number;
+            height:   number;
+            url_key?: string;
+        }
+        
+        export interface DanmakuControl {
+            enable_danmaku:       boolean;
+            post_privilege_level: number;
+            is_post_denied:       boolean;
+            post_denied_reason:   string;
+            activities:           null;
+        }
+        
+        export interface EntertainmentProductInfo {
+            sub_title:   null;
+            market_info: MarketInfo;
+            biz:         number;
+        }
+        
+        export interface MarketInfo {
+            limit_free:    LimitFree;
+            marketing_tag: null;
+        }
+        
+        export interface LimitFree {
+            in_free: boolean;
+        }
+        
+        export interface Image {
+            uri:                              string;
+            url_list:                         string[];
+            download_url_list:                string[];
+            height:                           number;
+            width:                            number;
+            mask_url_list:                    null;
+            interaction_stickers:             null;
+            watermark_free_download_url_list: null;
+        }
+        
+        export interface ImpressionData {
+            group_id_list_a:   null;
+            group_id_list_b:   null;
+            similar_id_list_a: null;
+            similar_id_list_b: null;
+            group_id_list_c:   null;
+            group_id_list_d:   null;
+        }
+        
+        export interface Music {
+            id:                       number;
+            id_str:                   string;
+            title:                    string;
+            author:                   string;
+            album:                    string;
+            cover_medium:             AvatarThumb;
+            cover_thumb:              AvatarThumb;
+            play_url:                 AvatarThumb;
+            duration:                 number;
+            extra:                    string;
+            user_count:               number;
+            position:                 null;
+            collect_stat:             number;
+            status:                   number;
+            owner_id?:                string;
+            owner_nickname:           string;
+            is_original:              boolean;
+            mid:                      string;
+            binded_challenge_id:      number;
+            author_position:          null;
+            unshelve_countries:       null;
+            external_song_info:       null;
+            sec_uid?:                 string;
+            avatar_thumb?:            AvatarThumb;
+            artists:                  null;
+            lyric_short_position:     null;
+            tag_list:                 null;
+            music_chart_ranks:        null;
+            artist_user_infos:        null;
+            musician_user_infos:      null;
+            talent_hashtag_name_list: null;
+        }
+        
+        export interface ShareInfo {
+            share_url:       string;
+            share_desc:      string;
+            share_title:     string;
+            share_link_desc: string;
+            share_quote:     string;
+            share_desc_info: string;
+        }
+        
+        export interface Statistics {
+            comment_count:    number;
+            digg_count:       number;
+            download_count:   number;
+            play_count:       number;
+            share_count:      number;
+            forward_count:    number;
+            live_watch_count: number;
+            collect_count:    number;
+        }
+        
+        export interface Status {
+            is_delete:      boolean;
+            allow_share:    boolean;
+            is_private:     boolean;
+            private_status: number;
+            in_reviewing:   boolean;
+            is_prohibited:  boolean;
+            review_result:  ReviewResult;
+            part_see:       number;
+        }
+        
+        export interface ReviewResult {
+            review_status: number;
+        }
+        
+        export interface SuggestWords {
+            suggest_words: SuggestWord[];
+        }
+        
+        export interface SuggestWord {
+            words:      Word[];
+            scene:      Scene;
+            icon_url:   string;
+            hint_text:  string;
+            extra_info: ExtraInfo;
+        }
+        
+        export enum ExtraInfo {
+            IsLifeIntent1RespFromHitCache = "{\"is_life_intent\":1,\"resp_from\":\"hit_cache\"}",
+            RespFromHitCache = "{\"resp_from\":\"hit_cache\"}",
+        }
+        
+        export enum Scene {
+            CommentTopRec = "comment_top_rec",
+            DetailInboxRex = "detail_inbox_rex",
+            FeedBottomRec = "feed_bottom_rec",
+        }
+        
+        export interface Word {
+            word:    string;
+            word_id: string;
+            info:    string;
+        }
+        
+        export interface TextExtra {
+            start:         number;
+            end:           number;
+            type:          number;
+            hashtag_name?: string;
+            hashtag_id?:   string;
+            is_commerce?:  boolean;
+            user_id?:      string;
+            sec_uid?:      string;
+        }
+        
+        export interface Video {
+            play_addr:                      DownloadAddr;
+            cover:                          AvatarThumb;
+            height:                         number;
+            width:                          number;
+            origin_cover:                   AvatarThumb;
+            ratio:                          string;
+            bit_rate:                       BitRate[] | null;
+            duration:                       number;
+            tags:                           null;
+            big_thumbs:                     BigThumb[] | null;
+            meta:                           string;
+            bit_rate_audio:                 BitRateAudio[] | null;
+            dynamic_cover?:                 AvatarThumb;
+            download_addr?:                 DownloadAddr;
+            play_addr_lowbr?:               DownloadAddr;
+            download_suffix_logo_addr?:     DownloadAddr;
+            has_download_suffix_logo_addr?: boolean;
+            play_addr_265?:                 DownloadAddr;
+            video_model?:                   string;
+            gaussian_cover?:                AvatarThumb;
+            raw_cover?:                     AvatarThumb;
+        }
+        
+        export interface BigThumb {
+            img_num:    number;
+            uri:        string;
+            img_url:    string;
+            img_x_size: number;
+            img_y_size: number;
+            img_x_len:  number;
+            img_y_len:  number;
+            duration:   number;
+            interval:   number;
+            fext:       string;
+            uris:       string[] | null;
+            img_urls:   string[] | null;
+        }
+        
+        export interface BitRate {
+            gear_name:    string;
+            quality_type: number;
+            bit_rate:     number;
+            play_addr:    DownloadAddr;
+            is_h265:      number;
+            is_bytevc1:   number;
+            HDR_type:     string;
+            HDR_bit:      string;
+            FPS:          number;
+            video_extra:  string;
+            format:       Format;
+        }
+        
+        export enum Format {
+            Dash = "dash",
+            Mp4 = "mp4",
+        }
+        
+        export interface DownloadAddr {
+            uri:        string;
+            url_list:   string[];
+            width:      number;
+            height:     number;
+            url_key?:   string;
+            data_size?: number;
+            file_hash?: string;
+            file_cs?:   string;
+        }
+        
+        export interface BitRateAudio {
+            audio_meta:    AudioMeta;
+            audio_quality: number;
+            audio_extra:   string;
+        }
+        
+        export interface AudioMeta {
+            url_list:     URLList;
+            encoded_type: string;
+            media_type:   string;
+            logo_type:    string;
+            quality:      string;
+            quality_desc: string;
+            format:       Format;
+            bitrate:      number;
+            codec_type:   string;
+            size:         number;
+            fps:          number;
+            file_id:      string;
+            file_hash:    string;
+            sub_info:     string;
+        }
+        
+        export interface URLList {
+            main_url:     string;
+            backup_url:   string;
+            fallback_url: string;
+        }
+        
+        export interface VideoControl {
+            allow_download:             boolean;
+            share_type:                 number;
+            show_progress_bar:          number;
+            draft_progress_bar:         number;
+            allow_duet:                 boolean;
+            allow_react:                boolean;
+            prevent_download_type:      number;
+            allow_dynamic_wallpaper:    boolean;
+            timer_status:               number;
+            allow_music:                boolean;
+            allow_stitch:               boolean;
+            allow_douplus:              boolean;
+            allow_share:                boolean;
+            share_grayed:               boolean;
+            download_ignore_visibility: boolean;
+            duet_ignore_visibility:     boolean;
+            share_ignore_visibility:    boolean;
+            download_info:              DownloadInfo;
+            duet_info:                  DuetInfo;
+            allow_record:               boolean;
+            disable_record_reason:      string;
+            timer_info:                 TimerInfo;
+        }
+        
+        export interface DownloadInfo {
+            level:      number;
+            fail_info?: DownloadInfoFailInfo;
+        }
+        
+        export interface DownloadInfoFailInfo {
+            code:   number;
+            reason: string;
+            msg?:   string;
+        }
+        
+        export interface DuetInfo {
+            level:      number;
+            fail_info?: DuetInfoFailInfo;
+        }
+        
+        export interface DuetInfoFailInfo {
+            code:   number;
+            reason: string;
+        }
+        
+        export interface TimerInfo {
+            timer_status: number;
+        }
+        
+        export interface DouyinAISearchInfo {
+            is_simple_qa_intent: boolean;
+            is_hit_high_risk:    boolean;
+            ai_search_req_patch: AdInfo;
+        }
+        
+        export interface Extra {
+            now:               number;
+            logid:             string;
+            fatal_item_ids:    any[];
+            search_request_id: string;
+            scenes:            null;
+        }
+        
+        export interface GlobalDoodleConfig {
+            keyword: string;
+        }
+        
+        export interface LogPb {
+            impr_id: string;
+        }
+        
+        export interface MultiColumnsInfo {
+            is_multi_columns: boolean;
+            group_tag:        string;
+        }
+        
+        export interface TimeCost {
+            stream_inner: number;
+        }
+        
+    }
+}
