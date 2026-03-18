@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.0
+// @version         1.3.1
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -1397,19 +1397,104 @@ const requires = this;
         }
       };
     }
-
     /**
-     * 从 video 对象上取得所有 url
-     *
-     * TODO: 这里其实还有编码 256 没有取
-     * TODO: 不同 url 代表不同分辨率，现在我们也还没区分
+     * 从 video 对象上取得所有 url，支持分辨率策略
      *
      * @param {import("./types").DouyinMedia.DouyinPlayerVideo | null | undefined} video_obj
+     * @returns {string[]} 视频播放地址数组
      */
     _get_video_urls(video_obj) {
       if (video_obj === null || video_obj === undefined) {
         return [];
       }
+
+      const mode = Config.global.features.download_video_mode;
+
+      // 默认模式：沿用原有逻辑，收集所有可能的 URL
+      if (mode === "default") {
+        const sources = [];
+        if (video_obj.playApi) {
+          sources.push(video_obj.playApi);
+        }
+        if (Array.isArray(video_obj.playAddr)) {
+          sources.push(...video_obj.playAddr.map((x) => x.src));
+        }
+        if (video_obj.bitRateList) {
+          video_obj.bitRateList.forEach((x) => {
+            if (x.playApi) sources.push(x.playApi);
+          });
+        }
+        return Array.from(new Set(sources.filter(Boolean)));
+      }
+
+      // 非默认模式：需要从 bitRateList 中按策略筛选
+      if (!video_obj.bitRateList || video_obj.bitRateList.length === 0) {
+        // 没有码率列表时回退到默认模式
+        return this._get_video_urls_default(video_obj);
+      }
+
+      // 辅助函数：从码率项中提取 URL
+      const extractUrlsFromBitRate = (bitRate) => {
+        const urls = [];
+        if (bitRate.playApi) urls.push(bitRate.playApi);
+        if (Array.isArray(bitRate.playAddr)) {
+          urls.push(...bitRate.playAddr.map((addr) => addr.src));
+        }
+        return urls;
+      };
+
+      let selectedBitRate = null;
+
+      // 根据模式选择
+      if (mode === "max") {
+        // 按数据大小降序，取最大的
+        const sorted = [...video_obj.bitRateList].sort(
+          (a, b) => (b.dataSize || 0) - (a.dataSize || 0)
+        );
+        selectedBitRate = sorted[0];
+      } else if (mode === "min") {
+        // 按数据大小升序，取最小的
+        const sorted = [...video_obj.bitRateList].sort(
+          (a, b) => (a.dataSize || 0) - (b.dataSize || 0)
+        );
+        selectedBitRate = sorted[0];
+      } else {
+        // 根据清晰度关键字匹配
+        const keywordMap = {
+          "1080P": ["1080"],
+          "720P": ["720"],
+          "540P": ["540"],
+          "360P": ["360"],
+          "2K": ["2k", "2160"], // 2K 可能标识为 2K 或 2160P
+        };
+        const keywords = keywordMap[mode] || [];
+        if (keywords.length > 0) {
+          selectedBitRate = video_obj.bitRateList.find((bitRate) => {
+            const gearName = (bitRate.gearName || "").toLowerCase();
+            return keywords.some((keyword) =>
+              gearName.includes(keyword.toLowerCase())
+            );
+          });
+        }
+      }
+
+      // 如果找到了匹配项，提取其 URL
+      if (selectedBitRate) {
+        const urls = extractUrlsFromBitRate(selectedBitRate);
+        if (urls.length > 0) {
+          return Array.from(new Set(urls.filter(Boolean)));
+        }
+      }
+
+      // 未找到匹配或提取失败，回退到默认模式
+      console.warn(`[dy-dl] 未找到符合模式 ${mode} 的视频地址，使用默认地址`);
+      return this._get_video_urls_default(video_obj);
+    }
+
+    /**
+     * 默认的 URL 提取逻辑（保持原有行为）
+     */
+    _get_video_urls_default(video_obj) {
       const sources = [];
       if (video_obj.playApi) {
         sources.push(video_obj.playApi);
@@ -1848,20 +1933,6 @@ const requires = this;
                 "_blank",
                 "noopener,noreferrer"
               );
-            },
-          },
-          {
-            render: () => {
-              const encode_to_png_switch = DOMPatcher.render_html(
-                `<div class="item"><label><input type="checkbox"/> WebP转码PNG</label></item>`
-              );
-              const $input = encode_to_png_switch.querySelector("input");
-              $input.checked = Config.global.features.convert_webp_to_png;
-              $input.addEventListener("click", () => {
-                Config.global.features.convert_webp_to_png = $input.checked;
-                Config.global.save();
-              });
-              return encode_to_png_switch;
             },
           },
           {
