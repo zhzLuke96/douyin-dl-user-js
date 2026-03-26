@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.2
+// @version         1.3.3
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -987,7 +987,7 @@ const requires = this;
   // 配置 config modal
   // #region Config Modal Components
   const ConfigModalComponents = (() => {
-    const { useState, useEffect } = requires?.htmPreact;
+    const { useState, useEffect, useMemo } = requires?.htmPreact;
     const { html } = requires?.htmPreact;
 
     // 样式常量
@@ -1035,6 +1035,20 @@ const requires = this;
         config.features.convert_webp_to_png
       );
 
+      // filename 实时刷新测试
+      const filename_test = useMemo(() => {
+        try {
+          return mediaHandler._build_filename(
+            mediaHandler.current_media,
+            filenameTemplate,
+            true
+          );
+        } catch (error) {
+          console.error(error);
+          return `ERROR: ${error.message}`;
+        }
+      }, [filenameTemplate]);
+
       const handleSave = () => {
         config.features.filename_template = filenameTemplate;
         config.features.download_video_mode = videoMode;
@@ -1062,6 +1076,8 @@ const requires = this;
               <code>tags</code>, <code>desc</code>, <code>aweme_id</code>,
               <code>create_date_YYYYMMDD</code>,
               <code>now_YYYYMMDD_HHmmss</code> 等。
+              <hr />
+              当前文件名：<code>${filename_test}</code>
             </div>
           </fieldset>
 
@@ -1263,17 +1279,19 @@ const requires = this;
      *
      * @param {import("./types").DouyinMedia.MediaRoot} media
      */
-    _build_filename(media) {
+    _build_filename(
+      media = this.current_media,
+      filename_template = Config.global.features.filename_template ||
+        Config.defaults.filename_template,
+      throw_err = false
+    ) {
       const {
         authorInfo: { nickname },
         awemeId,
         desc,
         textExtra,
       } = media;
-      const {
-        filename_template = Config.defaults.filename_template,
-        filename_max_length = 64,
-      } = Config.global.features;
+      const { filename_max_length = 64 } = Config.global.features;
 
       const short_id = MediaHandler.toShortId(awemeId);
       const tag_list =
@@ -1318,6 +1336,7 @@ const requires = this;
       try {
         baseName = runInContext(context, filename_template);
       } catch (error) {
+        if (throw_err) throw error;
         console.error(`[dy-dl] Error rendering filename template:`);
         console.error(error);
         baseName = runInContext(context, Config.defaults.filename_template);
