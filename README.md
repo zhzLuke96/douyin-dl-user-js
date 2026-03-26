@@ -70,15 +70,17 @@
 
 点击【插件>媒体详情】可以查看视频分辨率、图集列表、音乐、JSON
 
-<img width="840" height="655" alt="image" src="https://github.com/user-attachments/assets/08f8ae3b-59a2-489a-b9cb-a2182643c6f6" />
+<img width="782" height="620" alt="image" src="https://github.com/user-attachments/assets/23c2a44f-ce35-472b-80df-1fa36cf60668" />
 
-### 图片转码
+### 配置和历史
+
+<img width="633" height="496" alt="image" src="https://github.com/user-attachments/assets/93e829c5-0422-43eb-a8c1-4d203f8e6871" />
+
+#### 图片转码
 
 由 @Arrtourz 提出，可以使用浏览器 API 对 webp 视频转码，现在默认将会把所有 webp 图片转码为 png 保存。
 但是，代价就是 webp 格式文件很小，而转为 png 之后会明显变大
-所以如果你觉得不需要转码，你可以在插件中关闭，取消 【WebP 转码 PNG】 选项即可。
-
-![image](https://github.com/user-attachments/assets/60f6772b-0379-4ee7-9922-6116c93747c0)
+所以如果你觉得不需要转码，你可以在配置中关闭，取消 【将 WebP 图片转换为 PNG 格式下载】 选项即可。
 
 ## LICENSE
 
