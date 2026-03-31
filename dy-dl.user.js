@@ -58,6 +58,85 @@ const requires = this;
     return format.replace(/YYYY|MM|DD|HH|mm|ss/g, (m) => o[m]);
   };
 
+  /**
+   * 创建可定位的 Toast
+   * @param {HTMLElement|string} [target] - 目标元素或选择器，用于将 Toast 定位在其正上方；若未提供则显示在右下角
+   * @param {number} [defaultDuration=2000] - 默认自动消失时间（毫秒），设为 0 则不自动消失
+   * @returns {{ update: (message: string, duration?: number) => void, close: () => void }}
+   */
+  function createToast(target, defaultDuration = 2000) {
+    let toastEl = null;
+    let timeoutId = null;
+
+    // 解析目标元素（支持选择器字符串）
+    const getTargetElement = () => {
+      if (!target) return null;
+      if (typeof target === "string") return document.querySelector(target);
+      return target.nodeType === Node.ELEMENT_NODE ? target : null;
+    };
+
+    const updatePosition = () => {
+      if (!toastEl) return;
+      const targetEl = getTargetElement();
+      if (targetEl) {
+        const rect = targetEl.getBoundingClientRect();
+        const top = rect.top - toastEl.offsetHeight - 5; // 向上偏移5px
+        const left = rect.left + (rect.width - toastEl.offsetWidth) / 2;
+        toastEl.style.top = `${top}px`;
+        toastEl.style.left = `${left}px`;
+        toastEl.style.right = "auto";
+        toastEl.style.bottom = "auto";
+      } else {
+        // 默认右下角
+        toastEl.style.bottom = "20px";
+        toastEl.style.right = "20px";
+        toastEl.style.top = "auto";
+        toastEl.style.left = "auto";
+      }
+    };
+
+    const close = () => {
+      if (toastEl) {
+        toastEl.remove();
+        toastEl = null;
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const update = (message, duration = defaultDuration) => {
+      if (!toastEl) {
+        toastEl = document.createElement("div");
+        toastEl.className = "dy-dl-toast";
+        Object.assign(toastEl.style, {
+          position: "fixed",
+          background: "rgba(0,0,0,0.7)",
+          color: "#fff",
+          padding: "6px 12px",
+          borderRadius: "20px",
+          fontSize: "12px",
+          zIndex: 999999,
+          pointerEvents: "none",
+          transition: "opacity 0.3s",
+          fontFamily: "sans-serif",
+          whiteSpace: "nowrap",
+        });
+        document.body.appendChild(toastEl);
+      }
+      toastEl.textContent = message;
+      updatePosition();
+
+      if (timeoutId) clearTimeout(timeoutId);
+      if (duration > 0) {
+        timeoutId = setTimeout(close, duration);
+      }
+    };
+
+    return { update, close };
+  }
+
   // #region 配置管理
   class Config {
     static defaults = {
@@ -1878,11 +1957,22 @@ const requires = this;
       const { video, images } = this.current_media;
       const filename_base = this._build_filename(this.current_media);
 
-      if (Array.isArray(images) && images.length !== 0) {
+      // 判断是否为图集
+      const isAlbum = Array.isArray(images) && images.length > 0;
+      const total = isAlbum ? images.length : 1;
+
+      const toast = createToast(
+        document.querySelector(".dy-dl-video-btn"),
+        5 * 1000
+      );
+
+      if (isAlbum) {
         // 下载图集
         // TODO 要是能支持 zip 打包会更好一点
         let downloadedCount = 0;
         for (let idx = 0; idx < images.length; idx++) {
+          toast.update(`下载图集 (${idx + 1}/${total})`);
+
           const imageItem = images[idx];
           const item_filename = `${filename_base}_${idx + 1}`; // 1-based index for files
 
@@ -1916,6 +2006,7 @@ const requires = this;
             console.warn("[dy-dl]图集内图片无有效URL，跳过下载", imageItem);
           }
         }
+        toast.update(`图集下载完成`);
         if (downloadedCount === 0 && images.length > 0) {
           alert("[dy-dl]图集下载失败，未找到有效媒体链接。");
         }
@@ -1924,6 +2015,7 @@ const requires = this;
         }
         return;
       } else {
+        toast.update("正在下载...");
         // 单视频或单图片（老版本可能直接在video字段放图片信息，但新版通常是images）
         const video_urls = this._get_video_urls(video);
         if (video_urls.length !== 0) {
@@ -1933,6 +2025,7 @@ const requires = this;
             video_urls
           );
           DownloadHistory.add(this.current_media);
+          toast.update("下载完成");
           return;
         }
       }
