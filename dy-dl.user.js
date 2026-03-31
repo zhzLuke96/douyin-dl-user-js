@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.3
+// @version         1.3.4
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -68,6 +68,8 @@ const requires = this;
     features = {
       /**
        * 是否开启图片转码
+       *
+       * @deprecated 已经废弃使用 image_convert_codecs 代替
        */
       convert_webp_to_png: true,
       /**
@@ -87,6 +89,43 @@ const requires = this;
        * 最大文件名长度
        */
       filename_max_length: 64,
+      /**
+       * 视频下载编码偏好
+       *
+       * 1. 默认，无偏好 "default"
+       * 2. 只下载 h264 "h264"
+       * 3. 只下载 h265 "h265"
+       * 4. 优先 h264 "h264_prefer"
+       * 5. 优先 h265 "h265_prefer"
+       */
+      video_download_codecs: "default",
+      /**
+       * 图片转码编码偏好
+       *
+       * 1. 默认，无偏好 "default"
+       * 2. 转码为 png "png"
+       * 3. 转码为 jpg "jpg"
+       * 4. 转码为 webp "webp"
+       */
+      image_convert_codecs: "default",
+      /**
+       * 图片尺寸压缩偏好
+       *
+       * 1. 默认，无偏好 "default"
+       * 2. 最大边小于 2k "2k_max"
+       * 3. 最大边小于 1k "1k_max"
+       * 4. 最大边小于 960 "960_max"
+       * 5. 最大边小于 640 "640_max"
+       * 5. 最大边小于 512 "512_max"
+       */
+      image_resize_codecs: "default",
+      /**
+       * 图片压缩率 必须开启转码或者尺寸压缩才有用
+       *
+       * 默认 80
+       * 推荐 60 以上
+       */
+      image_quality: 80,
     };
 
     _key = "__douyin-dl-user-js__";
@@ -117,6 +156,10 @@ const requires = this;
 
     save() {
       localStorage.setItem(this._key, JSON.stringify(this.toJSON()));
+    }
+
+    clone_features() {
+      return JSON.parse(JSON.stringify(this.features));
     }
   }
   // #endregion
@@ -159,6 +202,172 @@ const requires = this;
 
     static clear() {
       localStorage.removeItem(this.STORAGE_KEY);
+    }
+  }
+  // #endregion
+
+  // #region 图片转码压缩
+  /**
+   * @typedef {"default"|"png"|"jpg"|"webp"} ImageConvertCodecs
+   * @typedef {"default"|"2k_max"|"1k_max"|"960_max"|"640_max"|"512_max"} ImageResizeCodecs
+   *
+   * @typedef {Object} ImageConfig
+   * @property {ImageConvertCodecs} image_convert_codecs
+   * @property {ImageResizeCodecs} image_resize_codecs
+   * @property {number} image_quality
+   */
+
+  class ImageProcessor {
+    /**
+     * @param {Partial<ImageConfig>} config
+     */
+    constructor(config = {}) {
+      /** @type {ImageConfig} */
+      this.config = Object.assign(
+        {
+          image_convert_codecs: "default",
+          image_resize_codecs: "default",
+          image_quality: 80,
+        },
+        config
+      );
+
+      this.resizeMap = {
+        "2k_max": 2048,
+        "1k_max": 1024,
+        "960_max": 960,
+        "640_max": 640,
+        "512_max": 512,
+      };
+    }
+
+    /**
+     * 根据配置判断是否需要压缩转码
+     * @param {number} width
+     * @param {number} height
+     * @returns {boolean}
+     */
+    is_need_convert(width, height) {
+      const { image_convert_codecs, image_resize_codecs } = this.config;
+      const need_format = image_convert_codecs !== "default";
+      const resize_target = this.resizeMap[image_resize_codecs] ?? Infinity;
+      const need_resize = width > resize_target || height > resize_target;
+      return need_format || need_resize;
+    }
+
+    /**
+     * 主入口
+     * @param {File|Blob} file
+     * @returns {Promise<{blob:Blob,outputType:string}>}
+     */
+    async process(file) {
+      const bitmap = await createImageBitmap(file);
+
+      let { width, height } = bitmap;
+
+      if (!this.is_need_convert(width, height)) {
+        return { blob: file };
+      }
+
+      // 1. resize
+      ({ width, height } = this._resize(width, height));
+
+      const canvas = this._createCanvas(width, height);
+      const ctx = canvas.getContext("2d");
+
+      const outputType = this._getOutputType(file.type);
+
+      // 2. 透明背景处理
+      if (outputType === "image/jpeg") {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      ctx.drawImage(bitmap, 0, 0, width, height);
+
+      // 3. encode
+      const blob = await this._toBlob(canvas, outputType);
+
+      return { blob, outputType };
+    }
+
+    /**
+     * resize 逻辑
+     * @private
+     */
+    _resize(width, height) {
+      const mode = this.config.image_resize_codecs;
+      const maxEdge = this.resizeMap[mode];
+
+      if (!maxEdge) return { width, height };
+
+      const scale = Math.min(1, maxEdge / Math.max(width, height));
+
+      return {
+        width: Math.round(width * scale),
+        height: Math.round(height * scale),
+      };
+    }
+
+    /**
+     * canvas 创建（兼容 fallback）
+     * @private
+     */
+    _createCanvas(width, height) {
+      if (typeof OffscreenCanvas !== "undefined") {
+        return new OffscreenCanvas(width, height);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      return canvas;
+    }
+
+    /**
+     * 输出格式决策
+     * @private
+     */
+    _getOutputType(inputType) {
+      const codec = this.config.image_convert_codecs;
+
+      if (codec === "png") return "image/png";
+      if (codec === "jpg") return "image/jpeg";
+      if (codec === "webp") return "image/webp";
+
+      // default 策略
+      if (inputType === "image/png") return "image/png";
+      if (inputType === "image/webp") return "image/webp";
+
+      return "image/jpeg";
+    }
+
+    /**
+     * 质量归一化
+     * @private
+     */
+    _normalizeQuality() {
+      const q = this.config.image_quality;
+      if (!q) return 0.8;
+      return Math.min(1, Math.max(0.1, q / 100));
+    }
+
+    /**
+     * toBlob 封装（兼容 HTMLCanvas）
+     * @private
+     */
+    _toBlob(canvas, type) {
+      const quality = this._normalizeQuality();
+
+      // OffscreenCanvas
+      if (canvas.convertToBlob) {
+        return canvas.convertToBlob({ type, quality });
+      }
+
+      // HTMLCanvas fallback
+      return new Promise((resolve) => {
+        canvas.toBlob(resolve, type, quality);
+      });
     }
   }
   // #endregion
@@ -365,7 +574,7 @@ const requires = this;
      *
      * @param imgSrc {string}
      * @param filename_input {string} 输入的文件名，如果有就用这个，没有就从请求体里面找
-     * @returns {Promise<{ok: boolean, blob?: Blob, filename?: string, isImage?: boolean, isWebP?: boolean, pngBlob?: Blob | null, fileExt?: string, error?: string}>}
+     * @returns {Promise<{ok: boolean, blob?: Blob, filename?: string, isImage?: boolean, isWebP?: boolean, pngBlob?: Blob | null, fileExt?: string, error?: string, contentType?: string, filename_base?: string}>}
      */
     async prepare_download_file(imgSrc, filename_input = "") {
       if (imgSrc.startsWith("//")) {
@@ -405,32 +614,23 @@ const requires = this;
       if (filename.endsWith(".image")) {
         filename = filename.slice(0, -".image".length);
       }
+      // Remove any existing extension before appending the new one
+      const filename_base = filename.replace(/\.[^/.]+$/, "");
       // Ensure filename ends with the determined extension
       const currentExtPattern = new RegExp(`\\.${determinedFileExt}$`, "i");
       if (!currentExtPattern.test(filename)) {
-        // Remove any existing extension before appending the new one
-        filename = filename.replace(/\.[^/.]+$/, "");
-        filename += `.${determinedFileExt}`;
+        filename = `${filename_base}.${determinedFileExt}`;
       }
 
       const blob = await response.blob();
-      let pngBlob = null;
-
-      if (isImage && isWebP && Config.global.features.convert_webp_to_png) {
-        try {
-          pngBlob = await this.convertWebPToPNG(blob);
-        } catch (error) {
-          console.error("[dy-dl]WebP转PNG失败", error);
-          // If conversion fails, pngBlob remains null, original blob will be used
-        }
-      }
 
       return {
         blob,
         filename,
+        filename_base,
         isImage,
         isWebP,
-        pngBlob,
+        contentType,
         fileExt: determinedFileExt,
         ok: true,
       };
@@ -449,6 +649,24 @@ const requires = this;
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
+    }
+
+    /**
+     * 下载后处理
+     *
+     * 1. 转码、压缩图片
+     *
+     * @param {Blob} blob
+     * @param {string} content_type
+     */
+    async download_postprocess(blob, content_type) {
+      if (content_type.startsWith("image/")) {
+        // 图片走压缩
+        const processor = new ImageProcessor(Config.global.clone_features());
+        const { blob: new_blob, outputType } = await processor.process(blob);
+        return { blob: new_blob, output_type: outputType };
+      }
+      return { blob, output_type: content_type };
     }
 
     /**
@@ -471,7 +689,7 @@ const requires = this;
       let firstAttemptFailedMessage = "";
 
       for (const [index, url] of url_sources.entries()) {
-        let blob, pngBlob, filename;
+        let blob, filename;
         try {
           const result = await this.prepare_download_file(url, filename_input);
           if (!result.ok) {
@@ -489,9 +707,31 @@ const requires = this;
             }
             continue;
           }
-          blob = result.blob;
-          pngBlob = result.pngBlob; // This will be the converted PNG if successful, or null
           filename = result.filename;
+          blob = result.blob;
+
+          // 压缩图片
+          const { blob: new_blob, output_type } =
+            await this.download_postprocess(blob, result.contentType ?? "");
+          blob = new_blob;
+          // 修改图片文件名后缀
+          switch (output_type) {
+            case "image/png": {
+              filename = result.filename_base + ".png";
+              break;
+            }
+            case "image/jpeg": {
+              filename = result.filename_base + ".jpeg";
+              break;
+            }
+            case "image/webp": {
+              filename = result.filename_base + ".webp";
+              break;
+            }
+            default: {
+              break;
+            }
+          }
         } catch (error) {
           console.error(`[dy-dl]预下载异常，将重试其他地址: ${url}`, error);
           if (index === 0) {
@@ -500,20 +740,6 @@ const requires = this;
               "Failed to fetch the file due to an exception";
           }
           continue;
-        }
-
-        // Prefer PNG blob if available (i.e., WebP was converted)
-        if (pngBlob) {
-          try {
-            await this.download_blob(pngBlob, filename);
-            return;
-          } catch (error) {
-            console.error(
-              `[dy-dl]下载转换后的PNG失败，回退原始版本: ${filename}`,
-              error
-            );
-            // Fall through to try downloading the original blob
-          }
         }
 
         // Download original blob (or if PNG download failed)
@@ -692,7 +918,11 @@ const requires = this;
 
     // --- Tab 内容组件 ---
 
+    /**
+     * @type {((_:{media: import("./types").DouyinMedia.MediaRoot | null, filenameBase: string})) => any}
+     */
     const MediaTab = ({ media, filenameBase }) => {
+      if (!media) return "无媒体信息";
       const { video, images, music } = media;
 
       // 视频部分
@@ -728,6 +958,7 @@ const requires = this;
               headers=${[
                 "清晰度",
                 "分辨率",
+                "编码",
                 "FPS",
                 "码率(kbps)",
                 "大小",
@@ -736,6 +967,7 @@ const requires = this;
               rows=${video.bitRateList.map((v) => [
                 v.gearName,
                 `${v.width}×${v.height}`,
+                v.isH265 ? "H.265" : "H.264",
                 v.fps,
                 (v.bitRate / 1000).toFixed(0),
                 fmt.size(v.dataSize),
@@ -1021,6 +1253,8 @@ const requires = this;
       table: "width: 100%; font-size: 13px; border-collapse: collapse;",
       th: "border: 1px solid #ddd; padding: 8px; background: #f5f5f5; text-align: left;",
       td: "border: 1px solid #ddd; padding: 8px; word-break: break-all;",
+      range: "flex: 1; margin-right: 10px;",
+      rangeValue: "width: 40px; text-align: center;",
     };
 
     // 基本设置页
@@ -1031,8 +1265,24 @@ const requires = this;
       const [videoMode, setVideoMode] = useState(
         config.features.download_video_mode
       );
+      // NOTE: 这个不用了
       const [convertWebP, setConvertWebP] = useState(
         config.features.convert_webp_to_png
+      );
+      // 新增配置项
+      const [videoCodec, setVideoCodec] = useState(
+        config.features.video_download_codecs || "default"
+      );
+      const [imageConvertCodec, setImageConvertCodec] = useState(
+        config.features.image_convert_codecs || "default"
+      );
+      const [imageResize, setImageResize] = useState(
+        config.features.image_resize_codecs || "default"
+      );
+      const [imageQuality, setImageQuality] = useState(
+        config.features.image_quality !== undefined
+          ? config.features.image_quality
+          : 80
       );
 
       // filename 实时刷新测试
@@ -1053,6 +1303,11 @@ const requires = this;
         config.features.filename_template = filenameTemplate;
         config.features.download_video_mode = videoMode;
         config.features.convert_webp_to_png = convertWebP;
+        // 保存新增配置项
+        config.features.video_download_codecs = videoCodec;
+        config.features.image_convert_codecs = imageConvertCodec;
+        config.features.image_resize_codecs = imageResize;
+        config.features.image_quality = imageQuality;
         config.save();
         alert("配置已保存");
       };
@@ -1082,9 +1337,9 @@ const requires = this;
           </fieldset>
 
           <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>下载视频分辨率策略</legend>
+            <legend style=${styles.legend}>视频下载设置</legend>
             <div style=${styles.row}>
-              <label style=${styles.label}>选择模式：</label>
+              <label style=${styles.label}>分辨率策略：</label>
               <select
                 style=${styles.select}
                 value=${videoMode}
@@ -1100,22 +1355,70 @@ const requires = this;
                 <option value="2K">2K</option>
               </select>
             </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>编码偏好：</label>
+              <select
+                style=${styles.select}
+                value=${videoCodec}
+                onChange=${(e) => setVideoCodec(e.target.value)}
+              >
+                <option value="default">默认（无偏好）</option>
+                <option value="h264">只下载 H264</option>
+                <option value="h265">只下载 H265</option>
+                <option value="h264_prefer">优先 H264</option>
+                <option value="h265_prefer">优先 H265</option>
+              </select>
+            </div>
             <div style="font-size: 12px; color: #666;">
-              注意：实际下载时根据可用地址匹配，若不支持所选分辨率则回退。
+              注意：实际下载时根据可用地址匹配，若不支持所选编码或分辨率则回退。
             </div>
           </fieldset>
 
           <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>其他选项</legend>
+            <legend style=${styles.legend}>图片下载设置</legend>
             <div style=${styles.row}>
+              <label style=${styles.label}>转码编码偏好：</label>
+              <select
+                style=${styles.select}
+                value=${imageConvertCodec}
+                onChange=${(e) => setImageConvertCodec(e.target.value)}
+              >
+                <option value="default">默认（保持原格式）</option>
+                <option value="png">转码为 PNG</option>
+                <option value="jpg">转码为 JPG</option>
+                <option value="webp">转码为 WebP</option>
+              </select>
+            </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>尺寸压缩偏好：</label>
+              <select
+                style=${styles.select}
+                value=${imageResize}
+                onChange=${(e) => setImageResize(e.target.value)}
+              >
+                <option value="default">默认（无压缩）</option>
+                <option value="2k_max">最大边小于 2K</option>
+                <option value="1k_max">最大边小于 1K</option>
+                <option value="960_max">最大边小于 960</option>
+                <option value="640_max">最大边小于 640</option>
+                <option value="512_max">最大边小于 512</option>
+              </select>
+            </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>压缩率：</label>
               <input
-                type="checkbox"
-                style=${styles.checkbox}
-                checked=${convertWebP}
-                onChange=${(e) => setConvertWebP(e.target.checked)}
-                id="webpConvert"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value=${imageQuality}
+                style=${styles.range}
+                onInput=${(e) => setImageQuality(parseInt(e.target.value, 10))}
               />
-              <label for="webpConvert">将 WebP 图片转换为 PNG 格式下载</label>
+              <span style=${styles.rangeValue}>${imageQuality}%</span>
+            </div>
+            <div style="font-size: 12px; color: #666;">
+              注意：压缩率仅当转码或尺寸压缩开启时生效，推荐 60% 以上。
             </div>
           </fieldset>
 
@@ -1416,8 +1719,10 @@ const requires = this;
         }
       };
     }
+
     /**
-     * 从 video 对象上取得所有 url，支持分辨率策略
+     * 从 video 对象上取得所有 url，支持分辨率策略 + 编码偏好
+     * 先按 codec 筛选，再按分辨率模式筛选
      *
      * @param {import("./types").DouyinMedia.DouyinPlayerVideo | null | undefined} video_obj
      * @returns {string[]} 视频播放地址数组
@@ -1427,87 +1732,116 @@ const requires = this;
         return [];
       }
 
-      const mode = Config.global.features.download_video_mode;
+      const mode = Config.global.features.download_video_mode || "default";
+      const codecPref =
+        Config.global.features.video_download_codecs || "default";
 
-      // 默认模式：沿用原有逻辑，收集所有可能的 URL
-      if (mode === "default") {
-        const sources = [];
-        if (video_obj.playApi) {
-          sources.push(video_obj.playApi);
-        }
-        if (Array.isArray(video_obj.playAddr)) {
-          sources.push(...video_obj.playAddr.map((x) => x.src));
-        }
-        if (video_obj.bitRateList) {
-          video_obj.bitRateList.forEach((x) => {
-            if (x.playApi) sources.push(x.playApi);
-          });
-        }
-        return Array.from(new Set(sources.filter(Boolean)));
-      }
-
-      // 非默认模式：需要从 bitRateList 中按策略筛选
-      if (!video_obj.bitRateList || video_obj.bitRateList.length === 0) {
-        // 没有码率列表时回退到默认模式
-        return this._get_video_urls_default(video_obj);
-      }
-
-      // 辅助函数：从码率项中提取 URL
+      // ====================== 辅助函数 ======================
       const extractUrlsFromBitRate = (bitRate) => {
         const urls = [];
         if (bitRate.playApi) urls.push(bitRate.playApi);
         if (Array.isArray(bitRate.playAddr)) {
           urls.push(...bitRate.playAddr.map((addr) => addr.src));
         }
-        return urls;
+        return urls.filter(Boolean);
       };
 
-      let selectedBitRate = null;
+      const isH265 = (bitRate) => {
+        return (
+          bitRate.isH265 === 1 ||
+          (bitRate.gearName || "").toLowerCase().includes("h265") ||
+          (bitRate.videoFormat || "").toLowerCase().includes("h265") ||
+          (bitRate.format || "").toLowerCase().includes("h265")
+        );
+      };
 
-      // 根据模式选择
-      if (mode === "max") {
-        // 按数据大小降序，取最大的
-        const sorted = [...video_obj.bitRateList].sort(
-          (a, b) => (b.dataSize || 0) - (a.dataSize || 0)
-        );
-        selectedBitRate = sorted[0];
-      } else if (mode === "min") {
-        // 按数据大小升序，取最小的
-        const sorted = [...video_obj.bitRateList].sort(
-          (a, b) => (a.dataSize || 0) - (b.dataSize || 0)
-        );
-        selectedBitRate = sorted[0];
-      } else {
-        // 根据清晰度关键字匹配
-        const keywordMap = {
-          "1080P": ["1080"],
-          "720P": ["720"],
-          "540P": ["540"],
-          "360P": ["360"],
-          "2K": ["2k", "2160"], // 2K 可能标识为 2K 或 2160P
-        };
-        const keywords = keywordMap[mode] || [];
-        if (keywords.length > 0) {
-          selectedBitRate = video_obj.bitRateList.find((bitRate) => {
-            const gearName = (bitRate.gearName || "").toLowerCase();
-            return keywords.some((keyword) =>
-              gearName.includes(keyword.toLowerCase())
-            );
-          });
+      // 如果 bitRateList 为空，直接回退默认逻辑
+      if (!video_obj.bitRateList || video_obj.bitRateList.length === 0) {
+        console.warn("[dy-dl] bitRateList 为空，使用默认地址");
+        return this._get_video_urls_default(video_obj);
+      }
+
+      // ====================== 第一步：按 codec 偏好筛选 ======================
+      let candidates = [...video_obj.bitRateList];
+
+      if (codecPref !== "default") {
+        const isPrefer = codecPref.endsWith("_prefer");
+        const wantH265 = codecPref.includes("h265");
+
+        const codecMatches = candidates.filter((bitRate) => {
+          return isH265(bitRate) === wantH265;
+        });
+
+        if (codecMatches.length > 0) {
+          candidates = codecMatches; // 找到对应编码，使用它
+        } else if (!isPrefer) {
+          // 严格模式（非 prefer）但没找到 → 直接回退
+          console.warn(
+            `[dy-dl] 未找到 ${
+              wantH265 ? "H265" : "H264"
+            } 编码的视频，使用默认地址`
+          );
+          return this._get_video_urls_default(video_obj);
+        }
+        // prefer 模式下没找到就继续使用全部 candidates
+      }
+
+      // ====================== 第二步：按分辨率模式筛选 ======================
+      if (mode !== "default" && candidates.length > 1) {
+        if (mode === "max") {
+          // 按数据大小降序，取最大的
+          candidates.sort((a, b) => (b.dataSize || 0) - (a.dataSize || 0));
+          candidates = [candidates[0]];
+        } else if (mode === "min") {
+          // 按数据大小升序，取最小的
+          candidates.sort((a, b) => (a.dataSize || 0) - (b.dataSize || 0));
+          candidates = [candidates[0]];
+        } else {
+          // 按清晰度关键字匹配（1080P、720P 等）
+          const keywordMap = {
+            "1080P": ["1080"],
+            "720P": ["720"],
+            "540P": ["540"],
+            "360P": ["360"],
+            "2K": ["2k", "2160"],
+          };
+
+          const keywords = keywordMap[mode] || [];
+          if (keywords.length > 0) {
+            const matched = candidates.filter((bitRate) => {
+              const gearName = (bitRate.gearName || "").toLowerCase();
+              return keywords.some((kw) => gearName.includes(kw.toLowerCase()));
+            });
+
+            if (matched.length > 0) {
+              candidates = matched;
+            }
+          }
         }
       }
 
-      // 如果找到了匹配项，提取其 URL
-      if (selectedBitRate) {
-        const urls = extractUrlsFromBitRate(selectedBitRate);
-        if (urls.length > 0) {
-          return Array.from(new Set(urls.filter(Boolean)));
-        }
+      // ====================== 提取最终 URL ======================
+      const allUrls = [];
+      candidates.forEach((bitRate) => {
+        allUrls.push(...extractUrlsFromBitRate(bitRate));
+      });
+
+      // 补充顶层 playApi / playApiH265（兜底）
+      if (codecPref === "default" || codecPref.includes("h264")) {
+        if (video_obj.playApi) allUrls.push(video_obj.playApi);
+      }
+      if (codecPref === "default" || codecPref.includes("h265")) {
+        if (video_obj.playApiH265) allUrls.push(video_obj.playApiH265);
       }
 
-      // 未找到匹配或提取失败，回退到默认模式
-      console.warn(`[dy-dl] 未找到符合模式 ${mode} 的视频地址，使用默认地址`);
-      return this._get_video_urls_default(video_obj);
+      const result = Array.from(new Set(allUrls.filter(Boolean)));
+
+      if (result.length === 0) {
+        console.warn("[dy-dl] 未能提取到有效视频地址，回退默认模式");
+        return this._get_video_urls_default(video_obj);
+      }
+
+      return result;
     }
 
     /**
@@ -1515,9 +1849,7 @@ const requires = this;
      */
     _get_video_urls_default(video_obj) {
       const sources = [];
-      if (video_obj.playApi) {
-        sources.push(video_obj.playApi);
-      }
+      if (video_obj.playApi) sources.push(video_obj.playApi);
       if (Array.isArray(video_obj.playAddr)) {
         sources.push(...video_obj.playAddr.map((x) => x.src));
       }
@@ -1526,6 +1858,8 @@ const requires = this;
           if (x.playApi) sources.push(x.playApi);
         });
       }
+      if (video_obj.playApiH265) sources.push(video_obj.playApiH265);
+
       return Array.from(new Set(sources.filter(Boolean)));
     }
 
@@ -2126,6 +2460,7 @@ const requires = this;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+      // TODO: 这里可能也转码一下？
       return new Promise((resolve) => {
         canvas.toBlob((blob) => resolve(blob), "image/png");
       });
