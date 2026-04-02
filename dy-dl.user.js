@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.4
+// @version         1.3.5
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -645,23 +645,101 @@ const requires = this;
       });
     }
 
+    async get_headers(url) {
+      const response = await fetch(url, {
+        method: "HEAD",
+      });
+      return response.headers;
+    }
+
+    /**
+     * 根据请求头猜测完整文件名
+     *
+     * @param dl_url {string}
+     * @param filename_input {string} 输入的文件名，如果有就用这个，没有就从请求体里面找
+     * @returns
+     */
+    async prepare_filename(dl_url, filename_input = "") {
+      if (dl_url.startsWith("//")) {
+        const protocol = window.location.protocol;
+        dl_url = `${protocol}${dl_url}`;
+      }
+
+      const headers = await this.get_headers(dl_url);
+      const content_disposition = headers.get("content-disposition");
+      const content_type = headers.get("content-type");
+      // const content_length = headers.get("content-length");
+      // const content_encoding = headers.get("content-encoding");
+      // const content_range = headers.get("content-range");
+      // const last_modified = headers.get("last-modified");
+      // const expires = headers.get("expires");
+      // const cache_control = headers.get("cache-control");
+      // const etag = headers.get("etag");
+
+      const isImage = content_type.startsWith("image/");
+      const isWebP = content_type.includes("webp");
+      const isVideo = content_type.startsWith("video/");
+
+      let fileExtGuess = content_type.split("/")[1]?.toLowerCase();
+      if (!fileExtGuess && isImage)
+        fileExtGuess = "jpg"; // fallback for image/*
+      else if (!fileExtGuess) fileExtGuess = "bin"; // fallback for unknown
+
+      let determinedFileExt = isImage
+        ? isWebP
+          ? "png" // Target extension for WebP after conversion
+          : fileExtGuess
+        : fileExtGuess;
+
+      // 如果有 content-disposition 且包含 filename 使用其中的后缀名
+      if (content_disposition) {
+        const contentDispositionMatch =
+          content_disposition.match(/filename="(.+)"$/i);
+        if (contentDispositionMatch) {
+          const filename = contentDispositionMatch[1];
+          const fileExt = filename.split(".").pop().toLowerCase();
+          if (fileExt) determinedFileExt = fileExt;
+        }
+      }
+
+      let filename =
+        filename_input || url.pathname.split("/").pop() || "download";
+      if (filename.endsWith(".image")) {
+        filename = filename.slice(0, -".image".length);
+      }
+      // Remove any existing extension before appending the new one
+      const filename_base = filename.replace(/\.[^/.]+$/, "");
+      // Ensure filename ends with the determined extension
+      const currentExtPattern = new RegExp(`\\.${determinedFileExt}$`, "i");
+      if (!currentExtPattern.test(filename)) {
+        filename = `${filename_base}.${determinedFileExt}`;
+      }
+
+      return {
+        filename,
+        ext: determinedFileExt,
+        isImage,
+        isVideo,
+      };
+    }
+
     /**
      * 预下载文件
      *
      * PS: 这一步其实没有下载，而是通过浏览器的缓存读取了
      * PSS: 并且如果浏览器没有缓存，似乎会报错，因为server那边会校验cookie，我们没带上（现在不知道要带上什么...在js里也没法重放请求...）
      *
-     * @param imgSrc {string}
+     * @param dl_url {string}
      * @param filename_input {string} 输入的文件名，如果有就用这个，没有就从请求体里面找
      * @returns {Promise<{ok: boolean, blob?: Blob, filename?: string, isImage?: boolean, isWebP?: boolean, pngBlob?: Blob | null, fileExt?: string, error?: string, contentType?: string, filename_base?: string}>}
      */
-    async prepare_download_file(imgSrc, filename_input = "") {
-      if (imgSrc.startsWith("//")) {
+    async prepare_download_file(dl_url, filename_input = "") {
+      if (dl_url.startsWith("//")) {
         const protocol = window.location.protocol;
-        imgSrc = `${protocol}${imgSrc}`;
+        dl_url = `${protocol}${dl_url}`;
       }
-      const url = new URL(imgSrc);
-      const response = await fetch(imgSrc);
+      const url = new URL(dl_url);
+      const response = await fetch(dl_url);
       if (!response.ok) {
         // Original script had: alert("Failed to fetch the file");
         // We now return an error status for the caller to decide.
@@ -897,6 +975,386 @@ const requires = this;
   }
   // #endregion
 
+  // #region 下载器唤醒
+  /**
+   * 下载器唤醒工具类
+   * 支持：IDM、Aria2、BitComet、AB Download Manager
+   */
+  class DownloaderLauncher {
+    /**
+     * @param {Object} config 全局配置（可选，也可在调用方法时传入具体配置）
+     * @param {Array} config.idmList IDM配置列表，默认 [{ id: "1", default: true }]
+     * @param {Array} config.aria2List Aria2配置列表
+     * @param {Array} config.bitcometList BitComet配置列表
+     * @param {Array} config.abdmList ABDM配置列表
+     * @param {string} config.curlTerminal 终端类型，默认 "wc" (Windows CMD)
+     */
+    constructor(config = {}) {
+      this.config = {
+        idmList: config.idmList || [{ id: "1", default: true }],
+        aria2List: config.aria2List || [
+          {
+            domain: "http://localhost",
+            port: "6800",
+            path: "/jsonrpc",
+            token: "",
+            dir: "",
+            default: true,
+          },
+        ],
+        bitcometList: config.bitcometList || [
+          {
+            domain: "http://localhost",
+            port: "8080",
+            path: "/panel/task_add_httpftp_result",
+            authName: "",
+            authPass: "",
+            dir: "",
+            default: true,
+          },
+        ],
+        abdmList: config.abdmList || [
+          {
+            domain: "http://localhost",
+            port: "15151",
+            dir: "",
+            default: true,
+          },
+        ],
+        curlTerminal: config.curlTerminal || "wc", // wc, wp, lt, ls, mt
+      };
+    }
+
+    // ==================== 辅助方法 ====================
+    /**
+     * 获取默认配置项
+     * @param {string} type idm | aria2 | bitcomet | abdm
+     * @returns {Object} 默认配置对象
+     */
+    getDefaultConfig(type) {
+      const listMap = {
+        idm: this.config.idmList,
+        aria2: this.config.aria2List,
+        bitcomet: this.config.bitcometList,
+        abdm: this.config.abdmList,
+      };
+      const list = listMap[type];
+      if (!list) throw new Error(`Unknown type: ${type}`);
+      const defaultItem = list.find((item) => item.default) || list[0];
+      return defaultItem;
+    }
+
+    /**
+     * 标准化请求头：转换为对象，添加常用默认头
+     * @param {Object|string} headers 原始头
+     * @param {boolean} addDefault 是否添加默认头（DNT, Cache-Control等）
+     * @returns {Object}
+     */
+    static normalizeHeaders(headers = {}, addDefault = false) {
+      if (typeof headers === "string") {
+        const raw = {};
+        headers.split(/[\r\n]+/).forEach((line) => {
+          if (!line.trim() || !line.includes(":")) return;
+          const [key, ...parts] = line.split(":");
+          raw[key.trim().toLowerCase()] = parts.join(":").trim();
+        });
+        headers = raw;
+      }
+      const newHeaders = {};
+      for (let key in headers) {
+        let value = headers[key];
+        if (typeof value === "object") value = JSON.stringify(value);
+        else value = String(value);
+        const normalizedKey = key
+          .toLowerCase()
+          .split("-")
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join("-");
+        newHeaders[normalizedKey] = value;
+      }
+      if (addDefault) return newHeaders;
+      return {
+        Dnt: "",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        Expires: "0",
+        Cookie: document.cookie,
+        "User-Agent": navigator.userAgent,
+        Origin: location.origin,
+        Referer: `${location.origin}/`,
+        ...newHeaders,
+      };
+    }
+
+    /**
+     * 发送HTTP请求（基于fetch，支持跨域）
+     * @param {string} url
+     * @param {Object} options fetch选项
+     * @returns {Promise<Object>}
+     */
+    static async request(url, options = {}) {
+      const response = await fetch(url, options);
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        data = await response.text();
+      }
+      return { status: response.status, data };
+    }
+
+    /**
+     * 格式化文件大小（用于调试）
+     * @param {number} bytes
+     * @returns {string}
+     */
+    static formatSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB", "TB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+    }
+
+    /**
+     * 生成cURL命令
+     * @param {string} link
+     * @param {string} filename
+     * @param {Object} headers 额外请求头
+     * @param {string} terminal 终端类型 wc|wp|lt|ls|mt
+     * @returns {string}
+     */
+    static toCurlCommand(link, filename, headers = {}, terminal = "wc") {
+      const curlCmd = terminal !== "wp" ? "curl" : "curl.exe";
+      const headerArgs = Object.entries(headers)
+        .map(([k, v]) => `-H "${k}: ${v}"`)
+        .join(" ");
+      const safeFilename = filename.replace(/[!?&|`"'*\/:<>\\]/g, "_");
+      return `${curlCmd} -L -C - "${link}" -o "${safeFilename}" ${headerArgs}`.trim();
+    }
+
+    /**
+     * 生成BC链接（比特彗星专用）
+     * @param {string} link
+     * @param {string} filename
+     * @param {Object} headers 额外请求头（将被编码进协议）
+     * @returns {string}
+     */
+    static toBitCometLink(link, filename, headers = {}) {
+      const safeFilename = filename.replace(/[!?&|`"'*\/:<>\\]/g, "_");
+      const query = new URLSearchParams();
+      query.append("url", link);
+      for (const [k, v] of Object.entries(headers)) {
+        query.append(k, v);
+      }
+      const queryStr = query.toString();
+      const bcData = `AA/${encodeURIComponent(safeFilename)}/?${queryStr}ZZ`;
+      const base64Data = btoa(unescape(encodeURIComponent(bcData)));
+      return `bc://http/${base64Data}`;
+    }
+
+    // ==================== 唤醒方法 ====================
+
+    /**
+     * 发送到 IDM
+     * @param {string} link 下载链接
+     * @param {string} filename 文件名
+     * @param {number} filesize 文件大小（字节）
+     * @param {Object} headers 请求头（可选）
+     * @param {Object} idmConfig 可选，覆盖默认配置
+     * @returns {Promise<boolean>} 是否成功
+     */
+    async launchIDM(link, filename, filesize, headers = {}, idmConfig = null) {
+      const config = idmConfig || this.getDefaultConfig("idm");
+      const clientId = config.id;
+      if (!clientId) throw new Error("IDM client id missing");
+
+      const seq = (this._idmSeq = (this._idmSeq || 1) + 1);
+      const time = Date.now();
+      const url = `http://127.0.0.1:1001/client/${clientId}?seq=${seq}`;
+      const ext = filename.split(".").pop().toUpperCase();
+
+      const normHeaders = DownloaderLauncher.normalizeHeaders(headers);
+      let headersText =
+        Object.entries(normHeaders)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\n") + "\n";
+
+      const format = (key, val) => {
+        if (val === undefined || val === null) return "";
+        const strVal = String(val);
+        const len = new Blob([strVal]).size;
+        return `${key}=${len}:${strVal}`;
+      };
+
+      const fields = [
+        format(4, ext),
+        format(6, link),
+        format(7, location.origin),
+        format(11, headersText),
+        format(100, filename),
+        format(122, 4),
+      ];
+      const data = `MSG#${seq}#13#1#10241:${
+        seq + 1000
+      }:0:${time}:0:1:2:${filesize}:0,${fields.join(",")};`;
+
+      try {
+        const res = await DownloaderLauncher.request(url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: data,
+        });
+        return res.data === `${seq}:3;`;
+      } catch (e) {
+        console.error("IDM launch failed", e);
+        return false;
+      }
+    }
+
+    /**
+     * 发送到 Aria2
+     * @param {string} link
+     * @param {string} filename
+     * @param {Object} headers 请求头（将转为 --header 数组）
+     * @param {Object} aria2Config 可选，覆盖默认配置
+     * @returns {Promise<boolean>}
+     */
+    async launchAria2(link, filename, headers = {}, aria2Config = null) {
+      const config = aria2Config || this.getDefaultConfig("aria2");
+      const url = `${config.domain}:${config.port}${config.path}`;
+      const headerList = Object.entries(
+        DownloaderLauncher.normalizeHeaders(headers)
+      ).map(([k, v]) => `${k}: ${v}`);
+      const rpcData = {
+        id: Date.now(),
+        jsonrpc: "2.0",
+        method: "aria2.addUri",
+        params: [
+          `token:${config.token}`,
+          [link],
+          {
+            dir: config.dir || undefined,
+            out: filename,
+            header: headerList,
+          },
+        ],
+      };
+      try {
+        const res = await DownloaderLauncher.request(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(rpcData),
+        });
+        return !!res.data?.result;
+      } catch (e) {
+        console.error("Aria2 launch failed", e);
+        return false;
+      }
+    }
+
+    /**
+     * 发送到比特彗星 (BitComet)
+     * @param {string} link
+     * @param {string} filename
+     * @param {Object} headers 请求头（将转为表单字段）
+     * @param {Object} bitcometConfig 可选，覆盖默认配置
+     * @returns {Promise<boolean>}
+     */
+    async launchBitComet(link, filename, headers = {}, bitcometConfig = null) {
+      const config = {
+        ...this.getDefaultConfig("bitcomet"),
+        ...bitcometConfig,
+      };
+      const url = `${config.domain}:${config.port}${config.path}`;
+      const formData = new URLSearchParams();
+      formData.append("url", link);
+      if (config.dir) formData.append("save_path", config.dir);
+      formData.append("file_name", filename);
+      formData.append("connection", "200");
+      const normHeaders = DownloaderLauncher.normalizeHeaders(headers);
+      for (const [k, v] of Object.entries(normHeaders)) {
+        formData.append(k, v);
+      }
+      const auth = btoa(`${config.authName}:${config.authPass}`);
+      try {
+        const res = await DownloaderLauncher.request(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${auth}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData,
+        });
+        // 比特彗星成功时返回空或特定字符串；失败包含 "Add task failed!"
+        return !res.data.includes("Add task failed!");
+      } catch (e) {
+        // 某些版本即使成功也会报网络错误，这里视为成功（实际需根据经验调整）
+        console.warn("BitComet launch may have succeeded despite error", e);
+        return true;
+      }
+    }
+
+    /**
+     * 发送到 AB Download Manager
+     * @param {string} link
+     * @param {string} filename
+     * @param {Object} headers 请求头
+     * @param {Object} abdmConfig 可选，覆盖默认配置
+     * @returns {Promise<boolean>}
+     */
+    async launchABDM(link, filename, headers = {}, abdmConfig = null) {
+      const config = { ...this.getDefaultConfig("abdm"), ...abdmConfig };
+      const url = `${config.domain}:${config.port}/start-headless-download`;
+      const normHeaders = DownloaderLauncher.normalizeHeaders(headers);
+      const payload = {
+        downloadSource: {
+          link: link,
+          headers: normHeaders,
+          downloadPage: normHeaders["Referer"] || location.href,
+        },
+        name: filename,
+      };
+      if (config.dir) payload.folder = config.dir;
+      try {
+        const res = await DownloaderLauncher.request(url, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=UTF-8" },
+          body: JSON.stringify(payload),
+        });
+        return res.data === "OK";
+      } catch (e) {
+        console.error("ABDM launch failed", e);
+        return false;
+      }
+    }
+
+    // 以下是同步命令生成方法（不实际唤醒）
+    getCurlCommand(link, filename, headers = {}) {
+      return DownloaderLauncher.toCurlCommand(
+        link,
+        filename,
+        headers,
+        this.config.curlTerminal
+      );
+    }
+
+    getBitCometLink(link, filename, headers = {}) {
+      return DownloaderLauncher.toBitCometLink(link, filename, headers);
+    }
+
+    getAria2Command(link, filename, headers = {}) {
+      const headerArgs = Object.entries(headers)
+        .map(([k, v]) => `--header "${k}: ${v}"`)
+        .join(" ");
+      const safeFilename = filename.replace(/[!?&|`"'*\/:<>\\]/g, "_");
+      return `aria2c "${link}" --out "${safeFilename}" ${headerArgs}`.trim();
+    }
+  }
+
+  // #endregion
+
   // #region Media Detail Model
 
   // 媒体详情 modal
@@ -998,17 +1456,122 @@ const requires = this;
     // --- Tab 内容组件 ---
 
     /**
+     * Launcher 配置
+     */
+    const launchers = [
+      {
+        key: "browser",
+        label: "打开",
+        buildUrl: (url) => url,
+      },
+      {
+        key: "copy",
+        label: "复制",
+        buildUrl: () => null,
+        action: (url) => {
+          navigator.clipboard.writeText(url);
+          alert("复制成功");
+        },
+      },
+      {
+        key: "potplayer",
+        label: "PotPlayer",
+        buildUrl: (url) => "potplayer://" + url,
+      },
+      // {
+      //   key: "baiduyunguanjia",
+      //   label: "百度盘",
+      //   buildUrl: (url, { filename }) =>
+      //     `baiduyunguanjia://${encodeURIComponent(url)}`,
+      // },
+      // {
+      //   key: "qkclouddrive",
+      //   label: "夸克盘",
+      //   buildUrl: (url, { filename }) =>
+      //     `qkclouddrive://${encodeURIComponent(url)}`,
+      // },
+      // {
+      //   key: "fdm",
+      //   label: "fdm",
+      //   buildUrl: (url, { filename }) => `fdm://${encodeURIComponent(url)}`,
+      // },
+      // {
+      //   key: "idm",
+      //   label: "idm",
+      //   buildUrl: (url, { filename }) => `idm://${encodeURIComponent(url)}`,
+      // },
+      {
+        key: "adbm",
+        label: "adbm",
+        buildUrl: () => null,
+        action: async (url, {}) => {
+          const input_filename = await mediaHandler._build_filename();
+          const { filename, isVideo, isImage } =
+            await mediaHandler.downloader.prepare_filename(url, input_filename);
+          const luncher = new DownloaderLauncher();
+          luncher.launchABDM(
+            url,
+            filename,
+            {},
+            {
+              dir: isVideo
+                ? "./Videos"
+                : isImage
+                ? "./Pictures"
+                : "./Documents",
+            }
+          );
+        },
+      },
+    ];
+
+    /**
+     * 通用唤醒按钮组
+     */
+    const LaunchButtons = ({ url, launchers }) => {
+      return html`
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${launchers.map((l) => {
+            const href = l.buildUrl?.(url, {});
+
+            if (l.action) {
+              return html`
+                <button onClick=${() => l.action(url, {})}>${l.label}</button>
+              `;
+            }
+
+            if (href) {
+              return html`
+                <a href=${href} target="_blank">
+                  <button>${l.label}</button>
+                </a>
+              `;
+            }
+
+            return null;
+          })}
+        </div>
+      `;
+    };
+
+    /**
      * @type {((_:{media: import("./types").DouyinMedia.MediaRoot | null, filenameBase: string})) => any}
      */
     const MediaTab = ({ media, filenameBase }) => {
       if (!media) return "无媒体信息";
       const { video, images, music } = media;
 
-      // 视频部分
+      /**
+       * 视频部分
+       */
       const VideoSection = () => {
         if (!video?.bitRateList?.length) return null;
+
         const coverUrl =
           video.originCoverUrlList?.[1] || video.originCoverUrlList?.[0];
+
+        // 可以按需裁剪 launcher（例如视频才有 potplayer）
+        const videoLaunchers = launchers;
 
         return html`
           <fieldset style=${styles.fieldset}>
@@ -1018,19 +1581,21 @@ const requires = this;
               <div>
                 <p><strong>分辨率:</strong> ${video.width} × ${video.height}</p>
                 <div style="margin-top: 10px;">
-                  <a href=${coverUrl} target="_blank" style=${styles.btn}
-                    >新标签打开</a
-                  >
+                  <a href=${coverUrl} target="_blank" style=${styles.btn}>
+                    新标签打开
+                  </a>
                   <a
                     href=${coverUrl}
-                    download="cover_${filenameBase}.jpeg"
+                    download=${`cover_${filenameBase}.jpeg`}
                     style=${styles.btn}
-                    >下载封面</a
                   >
+                    下载封面
+                  </a>
                 </div>
               </div>
             </div>
           </fieldset>
+
           <fieldset style=${styles.fieldset}>
             <legend style=${styles.legend}>视频源</legend>
             <${Table}
@@ -1051,7 +1616,12 @@ const requires = this;
                 (v.bitRate / 1000).toFixed(0),
                 fmt.size(v.dataSize),
                 v.playApi
-                  ? html`<a href=${v.playApi} target="_blank">播放</a>`
+                  ? html`
+                      <${LaunchButtons}
+                        url=${v.playApi}
+                        launchers=${videoLaunchers}
+                      />
+                    `
                   : "-",
               ])}
             />
@@ -1059,74 +1629,11 @@ const requires = this;
         `;
       };
 
-      // 图片部分
-      const ImageSection = () => {
-        if (!images?.length) return null;
-        return html`
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>图集 (${images.length}P)</legend>
-            <${Table}
-              headers=${["#", "类型", "预览", "分辨率", "大小", "下载"]}
-              rows=${images.map((img, i) => {
-                const isVid = !!img.video;
-                const thumb = isVid
-                  ? img.video.originCoverUrlList?.[0]
-                  : img.urlList?.[0];
-                const dl = isVid
-                  ? img.video.playAddr?.[0]?.src
-                  : img.downloadUrlList?.[0];
-                return [
-                  i + 1,
-                  isVid ? "视频" : "图片",
-                  html`<img src=${thumb} style=${styles.img} />`,
-                  isVid
-                    ? `${img.video.width}×${img.video.height}`
-                    : `${img.width}×${img.height}`,
-                  fmt.size(isVid ? img.video.dataSize : null),
-                  dl ? html`<a href=${dl} target="_blank">链接</a>` : "-",
-                ];
-              })}
-            />
-          </fieldset>
-        `;
-      };
-
-      // 音乐部分
-      const MusicSection = () => {
-        if (!music) return null;
-        return html`
-              <fieldset style=${styles.fieldset}>
-                  <legend style=${styles.legend}>背景音乐</legend>
-                  <div style="display: flex; gap: 15px; align-items: center;">
-                      <img src=${
-                        music.coverThumb?.urlList?.[0]
-                      } style="width:60px; height:60px; border-radius:4px;" />
-                      <div style="flex:1">
-                          <${KeyValue} label="标题">${music.title}</${KeyValue}>
-                          <${KeyValue} label="作者">${
-          music.author
-        }</${KeyValue}>
-                          <${KeyValue} label="时长">${
-          music.duration
-        } 秒</${KeyValue}>
-                          ${
-                            music.playUrl?.urlList?.[0] &&
-                            html`<a
-                              href=${music.playUrl.urlList[0]}
-                              target="_blank"
-                              style=${styles.btn}
-                              >试听</a
-                            >`
-                          }
-                      </div>
-                  </div>
-              </fieldset>
-          `;
-      };
-
-      return html`<div>
-        <${VideoSection} /><${ImageSection} /><${MusicSection} />
-      </div>`;
+      return html`
+        <div>
+          <${VideoSection} />
+        </div>
+      `;
     };
 
     const AuthorTab = ({ author }) => {
@@ -2478,7 +2985,7 @@ const requires = this;
      * @param {Function} fn
      */
     addHotkey(key, fn) {
-      document.addEventListener("keydown", (ev) => {
+      const callback = (ev) => {
         if (ev.key.toLowerCase() !== key.toLowerCase()) return;
 
         const activeElement = /** @type {HTMLElement} */ (
@@ -2496,7 +3003,10 @@ const requires = this;
 
         ev.preventDefault();
         fn();
-      });
+      };
+      document.addEventListener("keydown", callback);
+      const dispose = () => document.removeEventListener("keydown", callback);
+      return { dispose };
     }
   }
   // #endregion
@@ -2806,8 +3316,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   mediaHandler.init(); // Starts player detection
   domPatcher.startObserving(); // Starts DOM observation and initial scan
 
-  // Pass the already bound method from mediaHandler instance for the hotkey
-  hotkeyManager.addHotkey("m", mediaHandler.download_current_media);
+  // TODO: 支持自定义快捷键，没太想好怎么搞好点...
+  hotkeyManager.addHotkey("m", () => mediaHandler.download_current_media());
   // #endregion
   console.log("[dy-dl]已启动");
 })();
