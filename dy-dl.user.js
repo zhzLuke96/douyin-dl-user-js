@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.6
+// @version         1.3.7
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -1717,9 +1717,76 @@ const requires = this;
         `;
       };
 
+      // 图片部分
+      const ImageSection = () => {
+        if (!images?.length) return null;
+        return html`
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>图集 (${images.length}P)</legend>
+            <${Table}
+              headers=${["#", "类型", "预览", "分辨率", "大小", "下载"]}
+              rows=${images.map((img, i) => {
+                const isVid = !!img.video;
+                const thumb = isVid
+                  ? img.video.originCoverUrlList?.[0]
+                  : img.urlList?.[0];
+                const dl = isVid
+                  ? img.video.playAddr?.[0]?.src
+                  : img.downloadUrlList?.[0];
+                return [
+                  i + 1,
+                  isVid ? "视频" : "图片",
+                  html`<img src=${thumb} style=${styles.img} />`,
+                  isVid
+                    ? `${img.video.width}×${img.video.height}`
+                    : `${img.width}×${img.height}`,
+                  fmt.size(isVid ? img.video.dataSize : null),
+                  dl ? html`<a href=${dl} target="_blank">链接</a>` : "-",
+                ];
+              })}
+            />
+          </fieldset>
+        `;
+      };
+
+      // 音乐部分
+      const MusicSection = () => {
+        if (!music) return null;
+        return html`
+              <fieldset style=${styles.fieldset}>
+                  <legend style=${styles.legend}>背景音乐</legend>
+                  <div style="display: flex; gap: 15px; align-items: center;">
+                      <img src=${
+                        music.coverThumb?.urlList?.[0]
+                      } style="width:60px; height:60px; border-radius:4px;" />
+                      <div style="flex:1">
+                          <${KeyValue} label="标题">${music.title}</${KeyValue}>
+                          <${KeyValue} label="作者">${
+          music.author
+        }</${KeyValue}>
+                          <${KeyValue} label="时长">${
+          music.duration
+        } 秒</${KeyValue}>
+                          ${
+                            music.playUrl?.urlList?.[0] &&
+                            html`<a
+                              href=${music.playUrl.urlList[0]}
+                              target="_blank"
+                              style=${styles.btn}
+                              >试听</a
+                            >`
+                          }
+                      </div>
+                  </div>
+              </fieldset>
+          `;
+      };
+
       return html`
         <div>
           <${VideoSection} />
+          <${ImageSection} />
+          <${MusicSection} />
         </div>
       `;
     };
