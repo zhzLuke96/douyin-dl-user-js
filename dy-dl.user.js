@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.5
+// @version         1.3.6
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -668,7 +668,7 @@ const requires = this;
       const headers = await this.get_headers(dl_url);
       const content_disposition = headers.get("content-disposition");
       const content_type = headers.get("content-type");
-      // const content_length = headers.get("content-length");
+      const content_length = headers.get("content-length");
       // const content_encoding = headers.get("content-encoding");
       // const content_range = headers.get("content-range");
       // const last_modified = headers.get("last-modified");
@@ -720,6 +720,8 @@ const requires = this;
         ext: determinedFileExt,
         isImage,
         isVideo,
+        headers,
+        content_length,
       };
     }
 
@@ -1166,7 +1168,7 @@ const requires = this;
      * @returns {Promise<boolean>} 是否成功
      */
     async launchIDM(link, filename, filesize, headers = {}, idmConfig = null) {
-      const config = idmConfig || this.getDefaultConfig("idm");
+      const config = { ...this.getDefaultConfig("idm"), ...idmConfig };
       const clientId = config.id;
       if (!clientId) throw new Error("IDM client id missing");
 
@@ -1454,7 +1456,67 @@ const requires = this;
     `;
 
     // --- Tab 内容组件 ---
+    /**
+     * 规范化文件名，移除非法字符，处理保留名称，限制长度
+     * @param {string} name - 原始文件名（不包含路径）
+     * @param {Object} [options] - 可选配置
+     * @param {string} [options.replacementChar='_'] - 替换非法字符的字符
+     * @param {number} [options.maxLength=255] - 最大文件名长度（不含扩展名的部分会优先截断）
+     * @returns {string} 规范化后的文件名
+     */
+    function normalizeFilename(name, options = {}) {
+      const { replacementChar = "_", maxLength = 255 } = options;
 
+      if (typeof name !== "string") return "";
+
+      // 1. 分离基本名和扩展名（最后一个点之后的部分）
+      const lastDotIndex = name.lastIndexOf(".");
+      let baseName = name;
+      let extension = "";
+
+      if (lastDotIndex > 0 && lastDotIndex < name.length - 1) {
+        baseName = name.slice(0, lastDotIndex);
+        extension = name.slice(lastDotIndex);
+      }
+
+      // 2. 替换非法字符：Windows 保留字符 + 路径分隔符 + 控制字符
+      const illegalChars = /[\\/:*?"<>|\x00-\x1f\x7f]/g;
+      let cleanBase = baseName.replace(illegalChars, replacementChar);
+
+      // 3. 处理 Windows 保留设备名（如 CON, PRN, AUX, NUL, COM1 等）
+      const reservedNames = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$/i;
+      if (reservedNames.test(cleanBase)) {
+        cleanBase = replacementChar + cleanBase;
+      }
+
+      // 4. 去除首尾空格和点号（某些文件系统不允许结尾点）
+      cleanBase = cleanBase.trim().replace(/^\.+/, "").replace(/\.+$/, "");
+
+      // 5. 防止空字符串
+      if (cleanBase.length === 0) {
+        cleanBase = "file";
+      }
+
+      // 6. 合并连续的 replacementChar 为单个（可选，视觉更干净）
+      const multiReplacement = new RegExp(`${replacementChar}{2,}`, "g");
+      cleanBase = cleanBase.replace(multiReplacement, replacementChar);
+
+      // 7. 长度限制（优先保留扩展名）
+      const maxBaseLength = maxLength - extension.length;
+      if (maxBaseLength > 0 && cleanBase.length > maxBaseLength) {
+        cleanBase = cleanBase.slice(0, maxBaseLength);
+      }
+
+      // 8. 重新组合
+      let result = cleanBase + extension;
+
+      // 最后再次确保结果不为空（极端情况）
+      if (result.length === 0) {
+        result = "file";
+      }
+
+      return result;
+    }
     /**
      * Launcher 配置
      */
@@ -1498,7 +1560,22 @@ const requires = this;
       // {
       //   key: "idm",
       //   label: "idm",
-      //   buildUrl: (url, { filename }) => `idm://${encodeURIComponent(url)}`,
+      //   buildUrl: () => null,
+      //   action: async (url) => {
+      //     const input_filename = await mediaHandler._build_filename();
+      //     const { filename, isVideo, isImage, content_length } =
+      //       await mediaHandler.downloader.prepare_filename(url, input_filename);
+      //     const luncher = new DownloaderLauncher();
+      //     luncher.launchIDM(
+      //       url,
+      //       filename,
+      //       Number(content_length || ""),
+      //       {},
+      //       {
+      //         // TODO 增加配置
+      //       }
+      //     );
+      //   },
       // },
       {
         key: "adbm",
@@ -1507,18 +1584,29 @@ const requires = this;
         action: async (url, {}) => {
           const input_filename = await mediaHandler._build_filename();
           const { filename, isVideo, isImage } =
-            await mediaHandler.downloader.prepare_filename(url, input_filename);
+            await mediaHandler.downloader.prepare_filename(
+              url,
+              normalizeFilename(input_filename)
+            );
+          const user_dir = normalizeFilename(
+            `${mediaHandler.current_media.authorInfo.uid}_${mediaHandler.current_media.authorInfo.nickname}`
+          );
           const luncher = new DownloaderLauncher();
           luncher.launchABDM(
             url,
             filename,
             {},
             {
+              // dir: isVideo
+              //   ? "./Videos"
+              //   : isImage
+              //   ? "./Pictures"
+              //   : "./Documents",
               dir: isVideo
-                ? "./Videos"
+                ? `./douyin/${user_dir}/videos`
                 : isImage
-                ? "./Pictures"
-                : "./Documents",
+                ? `./douyin/${user_dir}/images`
+                : `./douyin/${user_dir}/others`,
             }
           );
         },
