@@ -155,7 +155,7 @@ const requires = this;
        * 下载视频分辨率策略
        * 可以选默认，最高清晰度，最小清晰度，和一些其他预设分辨率
        *
-       * @type {"default" | "max" | "min" | "1080P" | "720P" | "360P" | "2K"}
+       * @type {"default" | "max" | "min" | "1080P" | "720P" | "360P" | "2K" | "4K" | "max_file" | "min_file"}
        */
       download_video_mode: "default",
       /**
@@ -1998,10 +1998,17 @@ const requires = this;
       rangeValue: "width: 40px; text-align: center;",
     };
 
-    // 基本设置页
+    /**
+     * 基本设置页
+     * @param {{config: Config, onConfigChange: Function}} param0
+     * @returns
+     */
     const SettingsTab = ({ config, onConfigChange }) => {
       const [filenameTemplate, setFilenameTemplate] = useState(
         config.features.filename_template
+      );
+      const [filename_len, set_filename_len] = useState(
+        config.features.filename_max_length
       );
       const [videoMode, setVideoMode] = useState(
         config.features.download_video_mode
@@ -2032,16 +2039,18 @@ const requires = this;
           return mediaHandler._build_filename(
             mediaHandler.current_media,
             filenameTemplate,
+            filename_len,
             true
           );
         } catch (error) {
           console.error(error);
           return `ERROR: ${error.message}`;
         }
-      }, [filenameTemplate]);
+      }, [filenameTemplate, filename_len]);
 
       const handleSave = () => {
         config.features.filename_template = filenameTemplate;
+        config.features.filename_max_length = filename_len;
         config.features.download_video_mode = videoMode;
         config.features.convert_webp_to_png = convertWebP;
         // 保存新增配置项
@@ -2072,6 +2081,19 @@ const requires = this;
               <code>tags</code>, <code>desc</code>, <code>aweme_id</code>,
               <code>create_date_YYYYMMDD</code>,
               <code>now_YYYYMMDD_HHmmss</code> 等。
+            </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>文件名长度：</label>
+              <input
+                type="number"
+                max=${128}
+                min=${12}
+                style=${styles.input}
+                value=${filename_len}
+                onInput=${(e) => set_filename_len(e.target.value)}
+              />
+            </div>
+            <div style="font-size: 12px; color: #666; margin-top: 5px;">
               <hr />
               当前文件名：<code>${filename_test}</code>
             </div>
@@ -2089,11 +2111,14 @@ const requires = this;
                 <option value="default">默认（智能选择）</option>
                 <option value="max">最高清晰度</option>
                 <option value="min">最低清晰度</option>
+                <option value="max_file">最大文件</option>
+                <option value="min_file">最小文件</option>
                 <option value="1080P">1080P</option>
                 <option value="720P">720P</option>
                 <option value="540P">540P</option>
                 <option value="360P">360P</option>
                 <option value="2K">2K</option>
+                <option value="4K">4K</option>
               </select>
             </div>
             <div style=${styles.row}>
@@ -2327,6 +2352,7 @@ const requires = this;
       media = this.current_media,
       filename_template = Config.global.features.filename_template ||
         Config.defaults.filename_template,
+      filename_max_length = Config.global.features.filename_max_length || 64,
       throw_err = false
     ) {
       const {
@@ -2335,7 +2361,6 @@ const requires = this;
         desc,
         textExtra,
       } = media;
-      const { filename_max_length = 64 } = Config.global.features;
 
       const short_id = MediaHandler.toShortId(awemeId);
       const tag_list =
@@ -2529,35 +2554,72 @@ const requires = this;
 
       // ====================== 第二步：按分辨率模式筛选 ======================
       if (mode !== "default" && candidates.length > 1) {
-        if (mode === "max") {
-          // 按数据大小降序，取最大的
-          candidates.sort((a, b) => (b.dataSize || 0) - (a.dataSize || 0));
-          candidates = [candidates[0]];
-        } else if (mode === "min") {
-          // 按数据大小升序，取最小的
-          candidates.sort((a, b) => (a.dataSize || 0) - (b.dataSize || 0));
-          candidates = [candidates[0]];
-        } else {
-          // 按清晰度关键字匹配（1080P、720P 等）
-          const keywordMap = {
-            "1080P": ["1080"],
-            "720P": ["720"],
-            "540P": ["540"],
-            "360P": ["360"],
-            "2K": ["2k", "2160"],
-          };
+        /**
+         *
+         * @param {import("./types").DouyinMedia.FluffyBitRateList} a
+         */
+        const vsizeof = (a) => (a?.width || 0) * (a?.height || 0);
+        /**
+         *
+         * @param {import("./types").DouyinMedia.FluffyBitRateList} a
+         */
+        const vfilesizeof = (a) => a.dataSize || 0;
 
-          const keywords = keywordMap[mode] || [];
-          if (keywords.length > 0) {
-            const matched = candidates.filter((bitRate) => {
-              const gearName = (bitRate.gearName || "").toLowerCase();
-              return keywords.some((kw) => gearName.includes(kw.toLowerCase()));
-            });
+        // 通用方法：根据比较函数排序，并过滤出与第一个元素值相同的项
+        const sortAndFilter = (getValue, compare) => {
+          candidates.sort(compare);
+          const target = getValue(candidates[0]);
+          candidates = candidates.filter((item) => getValue(item) === target);
+        };
 
-            if (matched.length > 0) {
-              candidates = matched;
+        switch (mode) {
+          case "max":
+            // 按分辨率面积降序，取最大尺寸
+            sortAndFilter(vsizeof, (a, b) => vsizeof(b) - vsizeof(a));
+            break;
+
+          case "min":
+            // 按分辨率面积升序，取最小尺寸
+            sortAndFilter(vsizeof, (a, b) => vsizeof(a) - vsizeof(b));
+            break;
+
+          case "max_file":
+            // 按文件大小降序，取最大文件
+            sortAndFilter(
+              vfilesizeof,
+              (a, b) => vfilesizeof(b) - vfilesizeof(a)
+            );
+            break;
+
+          case "min_file":
+            // 按文件大小升序，取最小文件
+            sortAndFilter(
+              vfilesizeof,
+              (a, b) => vfilesizeof(a) - vfilesizeof(b)
+            );
+            break;
+
+          default:
+            // 按清晰度关键字匹配（1080P、720P 等）
+            const keywordMap = {
+              "1080P": ["1080"],
+              "720P": ["720"],
+              "540P": ["540"],
+              "360P": ["360"],
+              "2K": ["2k", "2048"],
+              "4K": ["4K", "4096"],
+            };
+            const keywords = keywordMap[mode] || [];
+            if (keywords.length > 0) {
+              const matched = candidates.filter((bitRate) => {
+                const gearName = (bitRate.gearName || "").toLowerCase();
+                return keywords.some((kw) =>
+                  gearName.includes(kw.toLowerCase())
+                );
+              });
+              if (matched.length > 0) candidates = matched;
             }
-          }
+            break;
         }
       }
 
