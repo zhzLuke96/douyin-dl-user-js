@@ -104,6 +104,14 @@
 - 可以自由配置转为 png/jpg/webp 三种格式
 - 并且可以设置图片尺寸压缩和质量压缩设置
 
+### 下载器
+<img width="605" height="244" alt="image" src="https://github.com/user-attachments/assets/b20b5c3c-ee49-4855-a065-cc2c12bf118f" />
+
+#### 下载器配置
+<img width="603" height="548" alt="image" src="https://github.com/user-attachments/assets/7cba58b0-ea79-4b53-8429-107c0dfd7663" />
+
+支持使用外部下载器下载文件，方便归档整理。
+
 #### 历史
 
 简单存储下载历史，方便检查，会存下作品名和作品地址。
