@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.7
+// @version         1.3.8
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -20,6 +20,7 @@ const requires = this;
 (function () {
   "use strict";
 
+  // #region tools function
   /*
    * 模板字符串函数
    * 用于占位标记用来触发编辑器高亮和格式化，没有实际作用
@@ -137,6 +138,68 @@ const requires = this;
 
     return { update, close };
   }
+  /**
+   * 规范化文件名，移除非法字符，处理保留名称，限制长度
+   * @param {string} name - 原始文件名（不包含路径）
+   * @param {Object} [options] - 可选配置
+   * @param {string} [options.replacementChar='_'] - 替换非法字符的字符
+   * @param {number} [options.maxLength=255] - 最大文件名长度（不含扩展名的部分会优先截断）
+   * @returns {string} 规范化后的文件名
+   */
+  function normalizeFilename(name, options = {}) {
+    const { replacementChar = "_", maxLength = 255 } = options;
+
+    if (typeof name !== "string") return "";
+
+    // 1. 分离基本名和扩展名（最后一个点之后的部分）
+    const lastDotIndex = name.lastIndexOf(".");
+    let baseName = name;
+    let extension = "";
+
+    if (lastDotIndex > 0 && lastDotIndex < name.length - 1) {
+      baseName = name.slice(0, lastDotIndex);
+      extension = name.slice(lastDotIndex);
+    }
+
+    // 2. 替换非法字符：Windows 保留字符 + 路径分隔符 + 控制字符
+    const illegalChars = /[\\/:*?"<>|\x00-\x1f\x7f]/g;
+    let cleanBase = baseName.replace(illegalChars, replacementChar);
+
+    // 3. 处理 Windows 保留设备名（如 CON, PRN, AUX, NUL, COM1 等）
+    const reservedNames = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$/i;
+    if (reservedNames.test(cleanBase)) {
+      cleanBase = replacementChar + cleanBase;
+    }
+
+    // 4. 去除首尾空格和点号（某些文件系统不允许结尾点）
+    cleanBase = cleanBase.trim().replace(/^\.+/, "").replace(/\.+$/, "");
+
+    // 5. 防止空字符串
+    if (cleanBase.length === 0) {
+      cleanBase = "file";
+    }
+
+    // 6. 合并连续的 replacementChar 为单个（可选，视觉更干净）
+    const multiReplacement = new RegExp(`${replacementChar}{2,}`, "g");
+    cleanBase = cleanBase.replace(multiReplacement, replacementChar);
+
+    // 7. 长度限制（优先保留扩展名）
+    const maxBaseLength = maxLength - extension.length;
+    if (maxBaseLength > 0 && cleanBase.length > maxBaseLength) {
+      cleanBase = cleanBase.slice(0, maxBaseLength);
+    }
+
+    // 8. 重新组合
+    let result = cleanBase + extension;
+
+    // 最后再次确保结果不为空（极端情况）
+    if (result.length === 0) {
+      result = "file";
+    }
+
+    return result;
+  }
+  // #endregion
 
   // #region 配置管理
   class Config {
@@ -207,11 +270,43 @@ const requires = this;
        */
       image_quality: 80,
       /**
-       * 下载器配置 默认为使用浏览器下载，可以配置其他下载
+       * 使用什么下载器 默认为使用浏览器下载，可以配置其他下载
        *
-       * @type {"browser" | "adbm" | "aria2"}
+       * @type {"browser" | "abdm" | "aria2"}
        */
       using_downloader: "browser",
+      /**
+       * 下载器配置
+       *
+       * 不同下载器有不同的配置
+       */
+      downloader_config: {
+        browser: {
+          // 没有配置
+        },
+        abdm: {
+          dir: {
+            // 不同类型的下载地址
+            video: "`./douyin/${user_dir}/videos`",
+            image: "`./douyin/${user_dir}/images`",
+            other: "`./douyin/${user_dir}/others`",
+          },
+          domain: "http://localhost",
+          port: "15151",
+        },
+        aria2: {
+          dir: {
+            // 不同类型的下载地址
+            video: "`./douyin/${user_dir}/videos`",
+            image: "`./douyin/${user_dir}/images`",
+            other: "`./douyin/${user_dir}/others`",
+          },
+          domain: "http://localhost",
+          port: "6800",
+          path: "/jsonrpc",
+          token: "",
+        },
+      },
     };
 
     _key = "__douyin-dl-user-js__";
@@ -836,6 +931,8 @@ const requires = this;
     }
 
     /**
+     * 使用浏览器下载数据
+     *
      * 下载文件流程:
      *
      * 1. 预下载为 blob ，读取元信息
@@ -844,7 +941,117 @@ const requires = this;
      *
      * @param source {string}
      * @param filename_input {string} 输入的文件名，如果有就用这个，没有就从请求体里面找
-     * @param fallback_src {string[]} 比如其他分辨率
+     */
+    async download_using_browser(url, filename_input) {
+      let blob, filename;
+      try {
+        const result = await this.prepare_download_file(url, filename_input);
+        if (!result.ok) {
+          const error_msg = `[dy-dl]预下载失败 (${
+            result.error || "Unknown error"
+          })，将重试其他地址: ${url}`;
+          return { ok: false, error_msg };
+        }
+        filename = result.filename;
+        blob = result.blob;
+
+        // 压缩图片
+        const { blob: new_blob, output_type } = await this.download_postprocess(
+          blob,
+          result.contentType ?? ""
+        );
+        blob = new_blob;
+        // 修改图片文件名后缀
+        switch (output_type) {
+          case "image/png": {
+            filename = result.filename_base + ".png";
+            break;
+          }
+          case "image/jpeg": {
+            filename = result.filename_base + ".jpeg";
+            break;
+          }
+          case "image/webp": {
+            filename = result.filename_base + ".webp";
+            break;
+          }
+          default: {
+            break;
+          }
+        }
+      } catch (error) {
+        console.error(`[dy-dl]预下载异常，将重试其他地址: ${url}`, error);
+        const error_msg = "Failed to fetch the file due to an exception";
+        return { ok: false, error_msg };
+      }
+
+      // Download original blob (or if PNG download failed)
+      if (blob) {
+        try {
+          await this.download_blob(blob, filename);
+          return { ok: true, error_msg: "" };
+        } catch (error) {
+          console.error(
+            `[dy-dl]下载blob失败，尝试其他版本: ${filename}`,
+            error
+          );
+          return {
+            ok: false,
+            error_msg: "Failed to download the file due to an exception",
+          };
+        }
+      }
+      return {
+        ok: false,
+        error_msg: "Failed to download the file due to an exception",
+      };
+    }
+
+    /**
+     * 根据配置使用不同的下载器
+     * @param {string} url
+     * @param {string} filename_input
+     */
+    async download_one_url(url, filename_input) {
+      const { using_downloader, downloader_config } = Config.global.features;
+      switch (using_downloader) {
+        case "browser":
+          return this.download_using_browser(url, filename_input);
+        case "aria2":
+        case "abdm":
+          return new DownloaderLauncher({
+            abdmList: [
+              {
+                domain: downloader_config.abdm?.domain ?? "http://localhost",
+                port: downloader_config.abdm?.port ?? "15151",
+                dir: "",
+              },
+            ],
+            aria2List: [
+              {
+                domain: downloader_config.aria2?.domain ?? "http://localhost",
+                port: downloader_config.aria2?.port ?? "6800",
+                path: downloader_config.aria2?.path ?? "/jsonrpc",
+                token: downloader_config.aria2?.token ?? "",
+                dir: "",
+              },
+            ],
+          })
+            .invoke_download(
+              url,
+              using_downloader,
+              downloader_config[using_downloader].dir
+            )
+            .then((x) => ({ ok: x, error_msg: "" }));
+        default: {
+          throw new Error(`[dy-dl]未知下载器: ${using_downloader}`);
+          break;
+        }
+      }
+    }
+
+    /**
+     * 下载文件 根据所有url逐一尝试下载
      */
     async download_file(source, filename_input = "", fallback_src = []) {
       let url_sources = [source, ...fallback_src].filter(
@@ -852,81 +1059,23 @@ const requires = this;
       );
       url_sources = Array.from(new Set(url_sources));
 
-      let firstAttemptFailedMessage = "";
+      let error_msg = "";
 
-      for (const [index, url] of url_sources.entries()) {
-        let blob, filename;
-        try {
-          const result = await this.prepare_download_file(url, filename_input);
-          if (!result.ok) {
-            const errorMessage = `[dy-dl]预下载失败 (${
-              result.error || "Unknown error"
-            })，将重试其他地址: ${url}`;
-            console.error(errorMessage);
-            if (index === 0) {
-              // Store message from first attempt
-              firstAttemptFailedMessage = result.error?.includes(
-                "Failed to fetch"
-              )
-                ? "Failed to fetch the file"
-                : "";
-            }
-            continue;
-          }
-          filename = result.filename;
-          blob = result.blob;
-
-          // 压缩图片
-          const { blob: new_blob, output_type } =
-            await this.download_postprocess(blob, result.contentType ?? "");
-          blob = new_blob;
-          // 修改图片文件名后缀
-          switch (output_type) {
-            case "image/png": {
-              filename = result.filename_base + ".png";
-              break;
-            }
-            case "image/jpeg": {
-              filename = result.filename_base + ".jpeg";
-              break;
-            }
-            case "image/webp": {
-              filename = result.filename_base + ".webp";
-              break;
-            }
-            default: {
-              break;
-            }
-          }
-        } catch (error) {
-          console.error(`[dy-dl]预下载异常，将重试其他地址: ${url}`, error);
-          if (index === 0) {
-            // Store message from first attempt
-            firstAttemptFailedMessage =
-              "Failed to fetch the file due to an exception";
-          }
-          continue;
-        }
-
-        // Download original blob (or if PNG download failed)
-        if (blob) {
-          try {
-            await this.download_blob(blob, filename);
-            return;
-          } catch (error) {
-            console.error(
-              `[dy-dl]下载blob失败，尝试其他版本: ${filename}`,
-              error
-            );
-            continue;
-          }
+      for (const url of url_sources.values()) {
+        const { ok, error_msg } = await this.download_one_url(
+          url,
+          filename_input
+        );
+        error_msg = error_msg || error_msg;
+        if (ok) {
+          return;
         }
       }
 
       // If all downloads failed, show an alert.
       // If the first attempt failed with a "Failed to fetch" style error, replicate original alert.
-      if (firstAttemptFailedMessage && url_sources.length === 1) {
-        alert(firstAttemptFailedMessage);
+      if (error_msg && url_sources.length === 1) {
+        alert(error_msg);
       } else {
         alert(`[dy-dl]所有尝试下载都失败，请刷新重试`);
       }
@@ -1000,7 +1149,7 @@ const requires = this;
      */
     constructor(config = {}) {
       this.config = {
-        idmList: config.idmList || [{ id: "1", default: true }],
+        idmList: config.idmList || [{ id: "1" }],
         aria2List: config.aria2List || [
           {
             domain: "http://localhost",
@@ -1008,7 +1157,6 @@ const requires = this;
             path: "/jsonrpc",
             token: "",
             dir: "",
-            default: true,
           },
         ],
         bitcometList: config.bitcometList || [
@@ -1019,7 +1167,6 @@ const requires = this;
             authName: "",
             authPass: "",
             dir: "",
-            default: true,
           },
         ],
         abdmList: config.abdmList || [
@@ -1027,7 +1174,6 @@ const requires = this;
             domain: "http://localhost",
             port: "15151",
             dir: "",
-            default: true,
           },
         ],
         curlTerminal: config.curlTerminal || "wc", // wc, wp, lt, ls, mt
@@ -1039,8 +1185,9 @@ const requires = this;
      * 简化入口
      * @param {string} url
      * @param {"idm" | "aria2" | "bc" | "abdm"} dl_name 下载器名称
+     * @param {void | null | {video: string, image: string, other: string}} dir_config 下载文件夹配置
      */
-    async invoke_download(url, dl_name = "adbm") {
+    async invoke_download(url, dl_name = "abdm", dir_config) {
       const input_filename = await mediaHandler._build_filename();
       const { filename, isVideo, isImage } =
         await mediaHandler.downloader.prepare_filename(
@@ -1050,7 +1197,7 @@ const requires = this;
       const user_dir = normalizeFilename(
         `${mediaHandler.current_media.authorInfo.uid}_${mediaHandler.current_media.authorInfo.nickname}`
       );
-      // TODO: 之后会增加下载器配置
+      // TODO: 下载文件夹位置暂时不支持配置
       switch (dl_name) {
         case "abdm": {
           return this.launchABDM(
@@ -1596,67 +1743,6 @@ const requires = this;
 
     // --- Tab 内容组件 ---
     /**
-     * 规范化文件名，移除非法字符，处理保留名称，限制长度
-     * @param {string} name - 原始文件名（不包含路径）
-     * @param {Object} [options] - 可选配置
-     * @param {string} [options.replacementChar='_'] - 替换非法字符的字符
-     * @param {number} [options.maxLength=255] - 最大文件名长度（不含扩展名的部分会优先截断）
-     * @returns {string} 规范化后的文件名
-     */
-    function normalizeFilename(name, options = {}) {
-      const { replacementChar = "_", maxLength = 255 } = options;
-
-      if (typeof name !== "string") return "";
-
-      // 1. 分离基本名和扩展名（最后一个点之后的部分）
-      const lastDotIndex = name.lastIndexOf(".");
-      let baseName = name;
-      let extension = "";
-
-      if (lastDotIndex > 0 && lastDotIndex < name.length - 1) {
-        baseName = name.slice(0, lastDotIndex);
-        extension = name.slice(lastDotIndex);
-      }
-
-      // 2. 替换非法字符：Windows 保留字符 + 路径分隔符 + 控制字符
-      const illegalChars = /[\\/:*?"<>|\x00-\x1f\x7f]/g;
-      let cleanBase = baseName.replace(illegalChars, replacementChar);
-
-      // 3. 处理 Windows 保留设备名（如 CON, PRN, AUX, NUL, COM1 等）
-      const reservedNames = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$/i;
-      if (reservedNames.test(cleanBase)) {
-        cleanBase = replacementChar + cleanBase;
-      }
-
-      // 4. 去除首尾空格和点号（某些文件系统不允许结尾点）
-      cleanBase = cleanBase.trim().replace(/^\.+/, "").replace(/\.+$/, "");
-
-      // 5. 防止空字符串
-      if (cleanBase.length === 0) {
-        cleanBase = "file";
-      }
-
-      // 6. 合并连续的 replacementChar 为单个（可选，视觉更干净）
-      const multiReplacement = new RegExp(`${replacementChar}{2,}`, "g");
-      cleanBase = cleanBase.replace(multiReplacement, replacementChar);
-
-      // 7. 长度限制（优先保留扩展名）
-      const maxBaseLength = maxLength - extension.length;
-      if (maxBaseLength > 0 && cleanBase.length > maxBaseLength) {
-        cleanBase = cleanBase.slice(0, maxBaseLength);
-      }
-
-      // 8. 重新组合
-      let result = cleanBase + extension;
-
-      // 最后再次确保结果不为空（极端情况）
-      if (result.length === 0) {
-        result = "file";
-      }
-
-      return result;
-    }
-    /**
      * Launcher 配置
      */
     const launchers = [
@@ -1717,12 +1803,12 @@ const requires = this;
       //   },
       // },
       {
-        key: "adbm",
-        label: "adbm",
+        key: "abdm",
+        label: "abdm",
         buildUrl: () => null,
         action: async (url, {}) => {
-          const luncher = new DownloaderLauncher();
-          await luncher.invoke_download(url, "abdm");
+          const launcher = new DownloaderLauncher();
+          await launcher.invoke_download(url, "abdm");
         },
       },
       {
@@ -1730,8 +1816,8 @@ const requires = this;
         label: "aria2",
         buildUrl: () => null,
         action: async (url) => {
-          const luncher = new DownloaderLauncher();
-          await luncher.invoke_download(url, "aria2");
+          const launcher = new DownloaderLauncher();
+          await launcher.invoke_download(url, "aria2");
         },
       },
     ];
@@ -2140,7 +2226,6 @@ const requires = this;
       const [convertWebP, setConvertWebP] = useState(
         config.features.convert_webp_to_png
       );
-      // 新增配置项
       const [videoCodec, setVideoCodec] = useState(
         config.features.video_download_codecs || "default"
       );
@@ -2154,6 +2239,9 @@ const requires = this;
         config.features.image_quality !== undefined
           ? config.features.image_quality
           : 80
+      );
+      const [using_downloader, set_UsingDownloader] = useState(
+        config.features.using_downloader || "browser"
       );
 
       // filename 实时刷新测试
@@ -2181,12 +2269,37 @@ const requires = this;
         config.features.image_convert_codecs = imageConvertCodec;
         config.features.image_resize_codecs = imageResize;
         config.features.image_quality = imageQuality;
+        config.features.using_downloader = using_downloader;
         config.save();
         alert("配置已保存");
       };
 
       return html`
         <div>
+          <div style="text-align: right;">
+            <button style=${styles.btn} onClick=${handleSave}>保存设置</button>
+          </div>
+
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>下载器配置</legend>
+            <div style=${styles.row}>
+              <label style=${styles.label}>下载器：</label>
+              <select
+                style=${styles.select}
+                value=${using_downloader}
+                onChange=${(e) => set_UsingDownloader(e.target.value)}
+              >
+                <option value="browser">默认（浏览器）</option>
+                <option value="abdm">AB Download Manager</option>
+                <option value="arai2">Arai2</option>
+              </select>
+            </div>
+            <div style="font-size: 12px; color: #666;">
+              如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。
+              <br />注意：使用外部下载器时，图片压缩转码功能不可用。
+            </div>
+          </fieldset>
+
           <fieldset style=${styles.fieldset}>
             <legend style=${styles.legend}>文件命名</legend>
             <div style=${styles.row}>
@@ -2310,10 +2423,6 @@ const requires = this;
               注意：压缩率仅当转码或尺寸压缩开启时生效，推荐 60% 以上。
             </div>
           </fieldset>
-
-          <div style="text-align: right;">
-            <button style=${styles.btn} onClick=${handleSave}>保存设置</button>
-          </div>
         </div>
       `;
     };
@@ -2386,14 +2495,235 @@ const requires = this;
       `;
     };
 
+    // ========== 下载器配置 Tab（与 SettingsTab 风格一致） ==========
+    const DownloaderConfigTab = ({ config, onConfigChange }) => {
+      // 获取当前配置（深拷贝防止直接修改）
+      const downloaderConfig = config.features.downloader_config || {
+        browser: {},
+        abdm: {
+          dir: {
+            video: "`./douyin/${user_dir}/videos`",
+            image: "`./douyin/${user_dir}/images`",
+            other: "`./douyin/${user_dir}/others`",
+          },
+          domain: "http://localhost",
+          port: "15151",
+        },
+        aria2: {
+          dir: {
+            video: "`./douyin/${user_dir}/videos`",
+            image: "`./douyin/${user_dir}/images`",
+            other: "`./douyin/${user_dir}/others`",
+          },
+          domain: "http://localhost",
+          port: "6800",
+          path: "/jsonrpc",
+          token: "",
+        },
+      };
+
+      // ABDM 配置状态
+      const [abdmDomain, setAbdmDomain] = useState(
+        downloaderConfig.abdm?.domain || "http://localhost"
+      );
+      const [abdmPort, setAbdmPort] = useState(
+        downloaderConfig.abdm?.port || "15151"
+      );
+      const [abdmDirVideo, setAbdmDirVideo] = useState(
+        downloaderConfig.abdm?.dir?.video || "`./douyin/${user_dir}/videos`"
+      );
+      const [abdmDirImage, setAbdmDirImage] = useState(
+        downloaderConfig.abdm?.dir?.image || "`./douyin/${user_dir}/images`"
+      );
+      const [abdmDirOther, setAbdmDirOther] = useState(
+        downloaderConfig.abdm?.dir?.other || "`./douyin/${user_dir}/others`"
+      );
+
+      // Aria2 配置状态
+      const [aria2Domain, setAria2Domain] = useState(
+        downloaderConfig.aria2?.domain || "http://localhost"
+      );
+      const [aria2Port, setAria2Port] = useState(
+        downloaderConfig.aria2?.port || "6800"
+      );
+      const [aria2Path, setAria2Path] = useState(
+        downloaderConfig.aria2?.path || "/jsonrpc"
+      );
+      const [aria2Token, setAria2Token] = useState(
+        downloaderConfig.aria2?.token || ""
+      );
+      const [aria2DirVideo, setAria2DirVideo] = useState(
+        downloaderConfig.aria2?.dir?.video || "`./douyin/${user_dir}/videos`"
+      );
+      const [aria2DirImage, setAria2DirImage] = useState(
+        downloaderConfig.aria2?.dir?.image || "`./douyin/${user_dir}/images`"
+      );
+      const [aria2DirOther, setAria2DirOther] = useState(
+        downloaderConfig.aria2?.dir?.other || "`./douyin/${user_dir}/others`"
+      );
+
+      // 保存配置
+      const handleSave = () => {
+        if (!config.features.downloader_config) {
+          config.features.downloader_config = {};
+        }
+        config.features.downloader_config.abdm = {
+          domain: abdmDomain,
+          port: abdmPort,
+          dir: {
+            video: abdmDirVideo,
+            image: abdmDirImage,
+            other: abdmDirOther,
+          },
+        };
+        config.features.downloader_config.aria2 = {
+          domain: aria2Domain,
+          port: aria2Port,
+          path: aria2Path,
+          token: aria2Token,
+          dir: {
+            video: aria2DirVideo,
+            image: aria2DirImage,
+            other: aria2DirOther,
+          },
+        };
+        config.save();
+        alert("下载器配置已保存");
+        if (onConfigChange) onConfigChange();
+      };
+
+      // 重置为默认值
+      const handleReset = () => {
+        if (confirm("重置所有下载器配置到默认值？")) {
+          setAbdmDomain("http://localhost");
+          setAbdmPort("15151");
+          setAbdmDirVideo("`./douyin/${user_dir}/videos`");
+          setAbdmDirImage("`./douyin/${user_dir}/images`");
+          setAbdmDirOther("`./douyin/${user_dir}/others`");
+          setAria2Domain("http://localhost");
+          setAria2Port("6800");
+          setAria2Path("/jsonrpc");
+          setAria2Token("");
+          setAria2DirVideo("`./douyin/${user_dir}/videos`");
+          setAria2DirImage("`./douyin/${user_dir}/images`");
+          setAria2DirOther("`./douyin/${user_dir}/others`");
+        }
+      };
+
+      return html`
+        <div>
+          <!-- 顶部操作栏，与 SettingsTab 保持一致 -->
+          <div style="text-align: right; margin-bottom: 15px;">
+            <button style=${styles.btn} onClick=${handleSave}>保存设置</button>
+            <button
+              style=${styles.btnDanger}
+              onClick=${handleReset}
+              style="margin-left: 8px;"
+            >
+              重置默认
+            </button>
+          </div>
+
+          <!-- ABDM 配置区块 -->
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>AB Download Manager (ABDM)</legend>
+            <div style=${styles.row}>
+              <label style=${styles.label}>服务地址：</label>
+              <input
+                type="text"
+                style=${styles.input}
+                value=${abdmDomain}
+                onInput=${(e) => setAbdmDomain(e.target.value)}
+                placeholder="http://localhost"
+              />
+            </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>端口：</label>
+              <input
+                type="text"
+                style=${styles.input}
+                value=${abdmPort}
+                onInput=${(e) => setAbdmPort(e.target.value)}
+                placeholder="15151"
+              />
+            </div>
+          </fieldset>
+
+          <!-- Aria2 配置区块 -->
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>Aria2 RPC</legend>
+            <div style=${styles.row}>
+              <label style=${styles.label}>服务地址：</label>
+              <input
+                type="text"
+                style=${styles.input}
+                value=${aria2Domain}
+                onInput=${(e) => setAria2Domain(e.target.value)}
+                placeholder="http://localhost"
+              />
+            </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>端口：</label>
+              <input
+                type="text"
+                style=${styles.input}
+                value=${aria2Port}
+                onInput=${(e) => setAria2Port(e.target.value)}
+                placeholder="6800"
+              />
+            </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>路径：</label>
+              <input
+                type="text"
+                style=${styles.input}
+                value=${aria2Path}
+                onInput=${(e) => setAria2Path(e.target.value)}
+                placeholder="/jsonrpc"
+              />
+            </div>
+            <div style=${styles.row}>
+              <label style=${styles.label}>Token：</label>
+              <input
+                type="text"
+                style=${styles.input}
+                value=${aria2Token}
+                onInput=${(e) => setAria2Token(e.target.value)}
+                placeholder="可选"
+              />
+            </div>
+          </fieldset>
+
+          <div
+            style="font-size: 12px; color: #666; background: #f9f9f9; padding: 8px; border-radius: 4px;"
+          >
+            💡
+            注意：需要在“基本设置”中选择对应的下载器（browser/abdm/aria2）后，此处配置才会生效。
+          </div>
+        </div>
+      `;
+    };
+
     // 主组件
     const App = ({ config, onClose }) => {
       const [activeTab, setActiveTab] = useState("settings");
 
       const tabs = [
         { id: "settings", title: "基本设置" },
+        { id: "downloader", title: "下载器配置" },
         { id: "history", title: "下载历史" },
       ];
+      const current_tab = {
+        settings: html`<${SettingsTab}
+          config=${config}
+          onConfigChange=${() => {}}
+        />`,
+        history: html`<${HistoryTab} />`,
+        downloader: html`<${DownloaderConfigTab}
+          config=${config}
+          onConfigChange=${() => {}}
+        />`,
+      }[activeTab];
 
       return html`
         <div style=${styles.container}>
@@ -2409,14 +2739,7 @@ const requires = this;
               `
             )}
           </nav>
-          <div style=${styles.content}>
-            ${activeTab === "settings"
-              ? html`<${SettingsTab}
-                  config=${config}
-                  onConfigChange=${() => {}}
-                />`
-              : html`<${HistoryTab} />`}
-          </div>
+          <div style=${styles.content}>${current_tab}</div>
         </div>
       `;
     };
