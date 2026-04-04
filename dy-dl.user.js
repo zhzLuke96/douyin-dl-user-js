@@ -6,12 +6,13 @@
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
 // @icon            https://www.google.com/s2/favicons?sz=64&domain=douyin.com
-// @grant           none
 // @license         MIT
 // @supportURL      https://github.com/zhzLuke96/douyin-dl-user-js/issues
-// @downloadURL https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.user.js
-// @updateURL https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.meta.js
+// @downloadURL     https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.user.js
+// @updateURL       https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.meta.js
 // @require         https://cdn.jsdelivr.net/npm/htm@3/preact/standalone.umd.js
+// @grant           GM_xmlhttpRequest
+// @connect         *
 // ==/UserScript==
 
 const requires = this;
@@ -205,6 +206,12 @@ const requires = this;
        * 推荐 60 以上
        */
       image_quality: 80,
+      /**
+       * 下载器配置 默认为使用浏览器下载，可以配置其他下载
+       *
+       * @type {"browser" | "adbm" | "aria2"}
+       */
+      using_downloader: "browser",
     };
 
     _key = "__douyin-dl-user-js__";
@@ -1027,6 +1034,58 @@ const requires = this;
       };
     }
 
+    // ==================== 简化入口 ====================
+    /**
+     * 简化入口
+     * @param {string} url
+     * @param {"idm" | "aria2" | "bc" | "abdm"} dl_name 下载器名称
+     */
+    async invoke_download(url, dl_name = "adbm") {
+      const input_filename = await mediaHandler._build_filename();
+      const { filename, isVideo, isImage } =
+        await mediaHandler.downloader.prepare_filename(
+          url,
+          normalizeFilename(input_filename)
+        );
+      const user_dir = normalizeFilename(
+        `${mediaHandler.current_media.authorInfo.uid}_${mediaHandler.current_media.authorInfo.nickname}`
+      );
+      // TODO: 之后会增加下载器配置
+      switch (dl_name) {
+        case "abdm": {
+          return this.launchABDM(
+            url,
+            filename,
+            {},
+            {
+              dir: isVideo
+                ? `./douyin/${user_dir}/videos`
+                : isImage
+                ? `./douyin/${user_dir}/images`
+                : `./douyin/${user_dir}/others`,
+            }
+          );
+        }
+        case "aria2": {
+          return this.launchAria2(
+            url,
+            filename,
+            {},
+            {
+              dir: isVideo
+                ? `./douyin/${user_dir}/videos`
+                : isImage
+                ? `./douyin/${user_dir}/images`
+                : `./douyin/${user_dir}/others`,
+            }
+          );
+        }
+        default: {
+          throw new Error(`Unknown download name: ${dl_name}`);
+        }
+      }
+    }
+
     // ==================== 辅助方法 ====================
     /**
      * 获取默认配置项
@@ -1089,7 +1148,87 @@ const requires = this;
     }
 
     /**
-     * 发送HTTP请求（基于fetch，支持跨域）
+     * 可跨域 xmlhttpRequest 请求
+     * @author hmjz100
+     * @description 封装 `GreaseMonkey-Compatible_xmlhttpRequest` 实现的跨域请求，与原始函数参数相同，支持回调和 await 两种用法
+     * @param {Object} option - 请求配置对象
+     * @returns {XMLHttpRequest|Promise} 请求对象实例或 Promise
+     */
+    static xmlHttpRequest(option) {
+      let xmlHttpRequest =
+        typeof GM_xmlhttpRequest === "function"
+          ? GM_xmlhttpRequest
+          : typeof GM?.xmlHttpRequest === "function"
+          ? GM.xmlHttpRequest
+          : null;
+      if (!xmlHttpRequest || typeof xmlHttpRequest !== "function")
+        throw new Error("GreaseMonkey 兼容 XMLHttpRequest 不可用。");
+
+      return xmlHttpRequest({ withCredentials: true, ...option });
+    }
+
+    /**
+     * 发送HTTP请求 使用 gm-xmlhttpRequest 发起跨域请求 aria2 需要这个不然没法请求
+     * @param {string} url
+     * @param {Object} options fetch选项
+     * @returns {Promise<Object>}
+     */
+    static request_cors(url, options = {}) {
+      return new Promise((resolve, reject) => {
+        const {
+          method = "GET",
+          headers = {},
+          body,
+          timeout = 30000,
+          responseType,
+        } = options;
+
+        this.xmlHttpRequest({
+          method,
+          url,
+          headers,
+          data: body,
+          timeout,
+          responseType, // 可选：'json' / 'blob' / 'arraybuffer'
+
+          onload: (res) => {
+            let data = res.response;
+
+            // fallback 解析（当没指定 responseType 时）
+            if (!responseType) {
+              const contentType = res.responseHeaders || "";
+
+              if (contentType.includes("application/json")) {
+                try {
+                  data = JSON.parse(res.responseText);
+                } catch (e) {
+                  data = res.responseText;
+                }
+              } else {
+                data = res.responseText;
+              }
+            }
+
+            resolve({
+              status: res.status,
+              data,
+              headers: res.responseHeaders,
+            });
+          },
+
+          onerror: (err) => {
+            reject(err);
+          },
+
+          ontimeout: () => {
+            reject(new Error("Request timeout"));
+          },
+        });
+      });
+    }
+
+    /**
+     * 发送HTTP请求 默认用这个请求，不需要权限
      * @param {string} url
      * @param {Object} options fetch选项
      * @returns {Promise<Object>}
@@ -1224,7 +1363,7 @@ const requires = this;
      * @returns {Promise<boolean>}
      */
     async launchAria2(link, filename, headers = {}, aria2Config = null) {
-      const config = aria2Config || this.getDefaultConfig("aria2");
+      const config = { ...this.getDefaultConfig("aria2"), ...aria2Config };
       const url = `${config.domain}:${config.port}${config.path}`;
       const headerList = Object.entries(
         DownloaderLauncher.normalizeHeaders(headers)
@@ -1244,7 +1383,7 @@ const requires = this;
         ],
       };
       try {
-        const res = await DownloaderLauncher.request(url, {
+        const res = await DownloaderLauncher.request_cors(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(rpcData),
@@ -1582,33 +1721,17 @@ const requires = this;
         label: "adbm",
         buildUrl: () => null,
         action: async (url, {}) => {
-          const input_filename = await mediaHandler._build_filename();
-          const { filename, isVideo, isImage } =
-            await mediaHandler.downloader.prepare_filename(
-              url,
-              normalizeFilename(input_filename)
-            );
-          const user_dir = normalizeFilename(
-            `${mediaHandler.current_media.authorInfo.uid}_${mediaHandler.current_media.authorInfo.nickname}`
-          );
           const luncher = new DownloaderLauncher();
-          luncher.launchABDM(
-            url,
-            filename,
-            {},
-            {
-              // dir: isVideo
-              //   ? "./Videos"
-              //   : isImage
-              //   ? "./Pictures"
-              //   : "./Documents",
-              dir: isVideo
-                ? `./douyin/${user_dir}/videos`
-                : isImage
-                ? `./douyin/${user_dir}/images`
-                : `./douyin/${user_dir}/others`,
-            }
-          );
+          await luncher.invoke_download(url, "abdm");
+        },
+      },
+      {
+        key: "aria2",
+        label: "aria2",
+        buildUrl: () => null,
+        action: async (url) => {
+          const luncher = new DownloaderLauncher();
+          await luncher.invoke_download(url, "aria2");
         },
       },
     ];
@@ -2443,7 +2566,7 @@ const requires = this;
     async _start_detect_player_change() {
       while (1) {
         // @ts-ignore // window.player is not typed here
-        const currentPlayer = window.player;
+        const currentPlayer = window.player || unsafeWindow.player;
         if (this.player !== currentPlayer) {
           this.player = currentPlayer;
           if (this.player) {
