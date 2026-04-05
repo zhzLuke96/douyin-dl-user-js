@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.9
+// @version         1.3.10
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -1606,7 +1606,8 @@ const requires = this;
       };
       if (config.dir) payload.folder = config.dir;
       try {
-        const res = await DownloaderLauncher.request(url, {
+        // 这里其实用 非cors跳过 也可以，但是fetch会报错...所以也用cors版本算了...
+        const res = await DownloaderLauncher.request_cors(url, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=UTF-8" },
           body: JSON.stringify(payload),
