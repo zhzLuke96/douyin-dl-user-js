@@ -778,8 +778,14 @@ const requires = this;
       // const cache_control = headers.get("cache-control");
       // const etag = headers.get("etag");
 
-      const isImage = content_type.startsWith("image/");
-      const isWebP = content_type.includes("webp");
+      // NOTE: 这是新文件头
+      const imagex_fmt = headers.get("Imagex-Fmt") || "";
+
+      const isImage = !!imagex_fmt || content_type.startsWith("image/");
+      const isWebP =
+        imagex_fmt.includes("2webp") ||
+        dl_url.includes(".webp") ||
+        content_type.includes("webp");
       const isVideo = content_type.startsWith("video/");
 
       let fileExtGuess = content_type.split("/")[1]?.toLowerCase();
@@ -787,11 +793,7 @@ const requires = this;
         fileExtGuess = "jpg"; // fallback for image/*
       else if (!fileExtGuess) fileExtGuess = "bin"; // fallback for unknown
 
-      let determinedFileExt = isImage
-        ? isWebP
-          ? "png" // Target extension for WebP after conversion
-          : fileExtGuess
-        : fileExtGuess;
+      let determinedFileExt = fileExtGuess;
 
       // 如果有 content-disposition 且包含 filename 使用其中的后缀名
       if (content_disposition) {
@@ -822,8 +824,10 @@ const requires = this;
         ext: determinedFileExt,
         isImage,
         isVideo,
+        isWebP,
         headers,
         content_length,
+        content_type,
       };
     }
 
@@ -835,14 +839,19 @@ const requires = this;
      *
      * @param dl_url {string}
      * @param filename_input {string} 输入的文件名，如果有就用这个，没有就从请求体里面找
-     * @returns {Promise<{ok: boolean, blob?: Blob, filename?: string, isImage?: boolean, isWebP?: boolean, pngBlob?: Blob | null, fileExt?: string, error?: string, contentType?: string, filename_base?: string}>}
+     * @returns {Promise<{ok: boolean, blob?: Blob, filename?: string, isImage?: boolean, isWebP?: boolean, pngBlob?: Blob | null, fileExt?: string, error?: string, content_type?: string, filename_base?: string}>}
      */
     async prepare_download_file(dl_url, filename_input = "") {
-      if (dl_url.startsWith("//")) {
-        const protocol = window.location.protocol;
-        dl_url = `${protocol}${dl_url}`;
-      }
-      const url = new URL(dl_url);
+      const {
+        filename,
+        ext,
+        isImage,
+        isVideo,
+        headers,
+        content_length,
+        content_type,
+      } = await this.prepare_filename(dl_url, filename_input);
+
       const response = await fetch(dl_url);
       if (!response.ok) {
         // Original script had: alert("Failed to fetch the file");
@@ -852,37 +861,6 @@ const requires = this;
           error: `Failed to fetch the file: ${response.status} ${response.statusText}`,
         };
       }
-      const contentType = response.headers.get("content-type");
-      if (!contentType) {
-        return { ok: false, error: "Content-Type header missing" };
-      }
-      const isImage = contentType.startsWith("image/");
-      const isWebP = contentType.includes("webp");
-
-      let fileExtGuess = contentType.split("/")[1]?.toLowerCase();
-      if (!fileExtGuess && isImage)
-        fileExtGuess = "jpg"; // fallback for image/*
-      else if (!fileExtGuess) fileExtGuess = "bin"; // fallback for unknown
-
-      const determinedFileExt = isImage
-        ? isWebP
-          ? "png" // Target extension for WebP after conversion
-          : fileExtGuess
-        : fileExtGuess;
-
-      let filename =
-        filename_input || url.pathname.split("/").pop() || "download";
-      if (filename.endsWith(".image")) {
-        filename = filename.slice(0, -".image".length);
-      }
-      // Remove any existing extension before appending the new one
-      const filename_base = filename.replace(/\.[^/.]+$/, "");
-      // Ensure filename ends with the determined extension
-      const currentExtPattern = new RegExp(`\\.${determinedFileExt}$`, "i");
-      if (!currentExtPattern.test(filename)) {
-        filename = `${filename_base}.${determinedFileExt}`;
-      }
-
       const blob = await response.blob();
 
       return {
@@ -891,8 +869,8 @@ const requires = this;
         filename_base,
         isImage,
         isWebP,
-        contentType,
-        fileExt: determinedFileExt,
+        content_type,
+        fileExt: ext,
         ok: true,
       };
     }
@@ -958,7 +936,7 @@ const requires = this;
         // 压缩图片
         const { blob: new_blob, output_type } = await this.download_postprocess(
           blob,
-          result.contentType ?? ""
+          result.content_type ?? ""
         );
         blob = new_blob;
         // 修改图片文件名后缀
@@ -1942,7 +1920,9 @@ const requires = this;
                   : img.urlList?.[0];
                 const dl = isVid
                   ? img.video.playAddr?.[0]?.src
-                  : img.downloadUrlList?.[0];
+                  : // : img.downloadUrlList?.[0] || img.urlList?.[0];
+                    // downloadUrlList 里面是带有水印的原图... urlList里面是q75的压缩图，但是分辨率不压缩，所以用这个更好点
+                    img.urlList?.[0];
                 return [
                   i + 1,
                   isVid ? "视频" : "图片",
@@ -3165,7 +3145,10 @@ const requires = this;
           }
 
           // 单纯的图片图集项
-          const img_urls = imageItem?.urlList?.filter(Boolean);
+          // NOTE: .urlList 里面是 q75的webp 图片， downloadUrlList 里面是完整原版大图但是带水印...
+          const img_urls =
+            imageItem?.urlList?.filter(Boolean) ||
+            imageItem?.downloadUrlList.filter(Boolean);
           if (img_urls && img_urls.length > 0) {
             await this.downloader.download_file(
               img_urls[0],
