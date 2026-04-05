@@ -1926,11 +1926,11 @@ const requires = this;
                 return [
                   i + 1,
                   isVid ? "视频" : "图片",
-                  html`<img src=${thumb} style=${styles.img} />`,
+                  html`<img src=${thumb} style=${styles.img} loading="lazy" />`,
                   isVid
                     ? `${img.video.width}×${img.video.height}`
                     : `${img.width}×${img.height}`,
-                  fmt.size(isVid ? img.video.dataSize : null),
+                  isVid ? fmt.size(img.video.dataSize) : `-`,
                   dl ? html`<a href=${dl} target="_blank">链接</a>` : "-",
                 ];
               })}
@@ -1942,13 +1942,14 @@ const requires = this;
       // 音乐部分
       const MusicSection = () => {
         if (!music) return null;
+        const dl_url = music.playUrl?.urlList?.[0] || "";
         return html`
               <fieldset style=${styles.fieldset}>
                   <legend style=${styles.legend}>背景音乐</legend>
                   <div style="display: flex; gap: 15px; align-items: center;">
                       <img src=${
                         music.coverThumb?.urlList?.[0]
-                      } style="width:60px; height:60px; border-radius:4px;" />
+                      } style="width:60px; height:60px; border-radius:4px;" loading="lazy"/>
                       <div style="flex:1">
                           <${KeyValue} label="标题">${music.title}</${KeyValue}>
                           <${KeyValue} label="作者">${
@@ -1958,13 +1959,23 @@ const requires = this;
           music.duration
         } 秒</${KeyValue}>
                           ${
-                            music.playUrl?.urlList?.[0] &&
+                            dl_url &&
                             html`<a
-                              href=${music.playUrl.urlList[0]}
+                              href=${dl_url}
                               target="_blank"
                               style=${styles.btn}
-                              >试听</a
+                              >下载</a
                             >`
+                          }
+                          ${
+                            dl_url &&
+                            html`<audio
+                              controls
+                              preload="metadata"
+                              style="width:100%"
+                            >
+                              <source src=${dl_url} />
+                            </audio>`
                           }
                       </div>
                   </div>
