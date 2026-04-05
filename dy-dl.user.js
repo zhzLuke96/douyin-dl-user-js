@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.11
+// @version         1.3.12
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -1887,7 +1887,8 @@ const requires = this;
               rows=${video.bitRateList.map((v) => [
                 v.gearName,
                 `${v.width}×${v.height}`,
-                v.isH265 ? "H.265" : "H.264",
+                (v.isH265 ? "H.265" : "H.264") +
+                  (v.format === "dash" ? " dash" : ""),
                 v.fps,
                 (v.bitRate / 1000).toFixed(0),
                 fmt.size(v.dataSize),
@@ -2965,8 +2966,13 @@ const requires = this;
         return this._get_video_urls_default(video_obj);
       }
 
+      // 第零步，过滤掉所有 dash 格式，因为这种需要手动合并音频，不太方便，我们这里也做不到...
+      const bitRateList = video_obj.bitRateList.filter(
+        (x) => x.format !== "dash"
+      );
+
       // ====================== 第一步：按 codec 偏好筛选 ======================
-      let candidates = [...video_obj.bitRateList];
+      let candidates = [...bitRateList];
 
       if (codecPref !== "default") {
         const isPrefer = codecPref.endsWith("_prefer");
@@ -3086,7 +3092,10 @@ const requires = this;
     }
 
     /**
-     * 默认的 URL 提取逻辑（保持原有行为）
+     * 默认的 URL 提取逻辑
+     *
+     * @param {import("./types").DouyinMedia.DouyinPlayerVideo | null | undefined} video_obj
+     * @returns {string[]} 视频播放地址数组
      */
     _get_video_urls_default(video_obj) {
       const sources = [];
@@ -3095,9 +3104,11 @@ const requires = this;
         sources.push(...video_obj.playAddr.map((x) => x.src));
       }
       if (video_obj.bitRateList) {
-        video_obj.bitRateList.forEach((x) => {
-          if (x.playApi) sources.push(x.playApi);
-        });
+        video_obj.bitRateList
+          .filter((x) => x.format !== "dash")
+          .forEach((x) => {
+            if (x.playApi) sources.push(x.playApi);
+          });
       }
       if (video_obj.playApiH265) sources.push(video_obj.playApiH265);
 

@@ -219,7 +219,7 @@ export namespace DouyinMedia {
       ufq:             CooperationInfo;
   }
 
-  export type Format = "mp4";
+  export type Format = "mp4" | "dash";
 
   export type PktOffsetMap = {
       time:   number;
