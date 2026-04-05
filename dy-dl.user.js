@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.10
+// @version         1.3.11
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -2283,7 +2283,7 @@ const requires = this;
               >
                 <option value="browser">默认（浏览器）</option>
                 <option value="abdm">AB Download Manager</option>
-                <option value="arai2">Arai2</option>
+                <option value="aria2">Aria2</option>
               </select>
             </div>
             <div style="font-size: 12px; color: #666;">
