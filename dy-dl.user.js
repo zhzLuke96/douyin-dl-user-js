@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.8
+// @version         1.3.9
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -1062,11 +1062,11 @@ const requires = this;
       let error_msg = "";
 
       for (const url of url_sources.values()) {
-        const { ok, error_msg } = await this.download_one_url(
+        const { ok, error_msg: emsg } = await this.download_one_url(
           url,
           filename_input
         );
-        error_msg = error_msg || error_msg;
+        error_msg = error_msg || emsg;
         if (ok) {
           return;
         }
