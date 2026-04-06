@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.12
+// @version         1.3.13
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -768,9 +768,9 @@ const requires = this;
       }
 
       const headers = await this.get_headers(dl_url);
-      const content_disposition = headers.get("content-disposition");
-      const content_type = headers.get("content-type");
-      const content_length = headers.get("content-length");
+      const content_disposition = headers.get("content-disposition") || "";
+      const content_type = headers.get("content-type") || "";
+      const content_length = headers.get("content-length") || "";
       // const content_encoding = headers.get("content-encoding");
       // const content_range = headers.get("content-range");
       // const last_modified = headers.get("last-modified");
@@ -828,6 +828,7 @@ const requires = this;
         headers,
         content_length,
         content_type,
+        filename_base,
       };
     }
 
@@ -849,7 +850,9 @@ const requires = this;
         isVideo,
         headers,
         content_length,
+        filename_base,
         content_type,
+        isWebP,
       } = await this.prepare_filename(dl_url, filename_input);
 
       const response = await fetch(dl_url);
