@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.15
+// @version         1.3.13
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -59,6 +59,9 @@ const requires = this;
     };
     return format.replace(/YYYY|MM|DD|HH|mm|ss/g, (m) => o[m]);
   };
+
+  const isProfilePagePath = (pathname = location.pathname) =>
+    pathname.startsWith("/user/");
 
   /**
    * 创建可定位的 Toast
@@ -207,6 +210,7 @@ const requires = this;
       filename_template: "`${nickname}_${short_id}_${tags}_${desc}`",
     };
     static global = new Config();
+    static listeners = new Set();
 
     features = {
       /**
@@ -307,6 +311,10 @@ const requires = this;
           token: "",
         },
       },
+      /**
+       * 是否显示作者主页下载悬浮面板
+       */
+      show_profile_panel: true,
     };
 
     _key = "__douyin-dl-user-js__";
@@ -337,10 +345,30 @@ const requires = this;
 
     save() {
       localStorage.setItem(this._key, JSON.stringify(this.toJSON()));
+      Config._emit();
     }
 
     clone_features() {
       return JSON.parse(JSON.stringify(this.features));
+    }
+
+    static subscribe(listener) {
+      this.listeners.add(listener);
+      listener(this.global.clone_features());
+      return () => {
+        this.listeners.delete(listener);
+      };
+    }
+
+    static _emit() {
+      const snapshot = this.global.clone_features();
+      this.listeners.forEach((listener) => {
+        try {
+          listener(snapshot);
+        } catch (error) {
+          console.error("[dy-dl]配置订阅失败", error);
+        }
+      });
     }
   }
   // #endregion
@@ -2370,6 +2398,9 @@ const requires = this;
       const [using_downloader, set_UsingDownloader] = useState(
         config.features.using_downloader || "browser"
       );
+      const [showProfilePanel, setShowProfilePanel] = useState(
+        config.features.show_profile_panel !== false
+      );
 
       // filename 实时刷新测试
       const filename_test = useMemo(() => {
@@ -2397,6 +2428,7 @@ const requires = this;
         config.features.image_resize_codecs = imageResize;
         config.features.image_quality = imageQuality;
         config.features.using_downloader = using_downloader;
+        config.features.show_profile_panel = showProfilePanel;
         config.save();
         alert("配置已保存");
       };
@@ -2424,6 +2456,21 @@ const requires = this;
             <div style="font-size: 12px; color: #666;">
               如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。
               <br />注意：使用外部下载器时，图片压缩转码功能不可用。
+            </div>
+          </fieldset>
+
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>悬浮面板</legend>
+            <div style=${styles.row}>
+              <label style=${styles.label}>作者主页面板：</label>
+              <input
+                type="checkbox"
+                checked=${showProfilePanel}
+                onChange=${(e) => setShowProfilePanel(e.target.checked)}
+              />
+            </div>
+            <div style="font-size: 12px; color: #666;">
+              用来控制作者主页右下角统一入口的显示。
             </div>
           </fieldset>
 
@@ -2875,6 +2922,157 @@ const requires = this;
   })();
   // #endregion
 
+  // #region Floating Action Panel
+  const FloatingPanelComponents = (() => {
+    const { useEffect, useState } = requires?.htmPreact;
+    const html = requires?.htmPreact?.html;
+
+    const styles = {
+      panel: `
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 240px;
+        max-width: min(320px, calc(100vw - 32px));
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(18, 18, 20, 0.94);
+        color: #fff;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.22);
+        backdrop-filter: blur(10px);
+        font-family: sans-serif;
+      `,
+      section: `
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      `,
+      sectionHeader: `
+        font-size: 12px;
+        color: rgba(255,255,255,0.7);
+      `,
+      status: `
+        font-size: 13px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+      `,
+      button: `
+        border: none;
+        border-radius: 10px;
+        padding: 8px 12px;
+        cursor: pointer;
+        background: rgba(255,255,255,0.12);
+        color: #fff;
+        font-size: 12px;
+      `,
+      primaryButton: `
+        border: none;
+        border-radius: 10px;
+        padding: 8px 12px;
+        cursor: pointer;
+        background: #fe2c55;
+        color: #fff;
+        font-size: 12px;
+      `,
+      buttonRow: `
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      `,
+    };
+
+    const App = ({ mediaHandler, profilePageHandler }) => {
+      const [profileSnapshot, setProfileSnapshot] = useState(
+        profilePageHandler.getPanelSnapshot()
+      );
+
+      useEffect(() => {
+        return profilePageHandler.subscribe((nextSnapshot) => {
+          setProfileSnapshot(nextSnapshot);
+        });
+      }, [profilePageHandler]);
+
+      useEffect(() => {
+        return Config.subscribe(() => {
+          setProfileSnapshot(profilePageHandler.getPanelSnapshot());
+        });
+      }, [profilePageHandler]);
+
+      const showProfileSection =
+        profileSnapshot.enabled &&
+        (profileSnapshot.isProfilePage || profileSnapshot.jobRunning);
+
+      if (!showProfileSection) {
+        return null;
+      }
+
+      return html`
+        <div class="dy-dl-floating-panel" style=${styles.panel}>
+          ${showProfileSection
+            ? html`
+                <div style=${styles.section}>
+                  <div style=${styles.sectionHeader}>作者主页下载</div>
+                  <div style=${styles.status}>
+                    ${profileSnapshot.summary}
+                  </div>
+                  <div style=${styles.buttonRow}>
+                    <button
+                      type="button"
+                      style=${styles.primaryButton}
+                      onClick=${() =>
+                        profilePageHandler.open_profile_download_modal()}
+                    >
+                      ${profileSnapshot.jobRunning ? "查看任务" : "打开任务面板"}
+                    </button>
+                    <button
+                      type="button"
+                      style=${styles.button}
+                      onClick=${() => mediaHandler.open_config_modal()}
+                    >
+                      设置
+                    </button>
+                  </div>
+                </div>
+              `
+            : null}
+        </div>
+      `;
+    };
+
+    return { App };
+  })();
+  // #endregion
+
+  class FloatingPanel {
+    /**
+     * @param {{mediaHandler: MediaHandler, profilePageHandler: ProfilePageHandler}} options
+     */
+    constructor(options) {
+      this.mediaHandler = options.mediaHandler;
+      this.profilePageHandler = options.profilePageHandler;
+      this.root = document.createElement("div");
+      this.root.className = "dy-dl-floating-panel-root";
+      document.body.appendChild(this.root);
+      this.render();
+    }
+
+    render() {
+      const { html, render } = requires.htmPreact;
+      const { App } = FloatingPanelComponents;
+      render(
+        html`<${App}
+          mediaHandler=${this.mediaHandler}
+          profilePageHandler=${this.profilePageHandler}
+        />`,
+        this.root
+      );
+    }
+  }
+
   // #region 主入口组件 ---
   /**
    * 这个类是主要逻辑
@@ -2899,9 +3097,6 @@ const requires = this;
       this.downloader = downloader;
       this.download_current_media = this._lock_download(
         this._download_current_media_logic.bind(this)
-      );
-      this.download_media_list = this._lock_download(
-        this._download_media_list_logic.bind(this)
       );
     }
 
@@ -3383,49 +3578,6 @@ const requires = this;
       });
     }
 
-    async _download_media_list_logic(media_list, toast_target = null) {
-      const deduped = [];
-      const seen = new Set();
-      (media_list || []).forEach((media) => {
-        if (!media?.awemeId || seen.has(media.awemeId)) return;
-        seen.add(media.awemeId);
-        deduped.push(media);
-      });
-
-      if (deduped.length === 0) {
-        alert("[dy-dl]未选择任何作品。");
-        return;
-      }
-
-      const toast = createToast(toast_target, 8 * 1000);
-      let successCount = 0;
-      let failedCount = 0;
-
-      for (let idx = 0; idx < deduped.length; idx++) {
-        const media = deduped[idx];
-        const result = await this._download_media_logic(media, {
-          toastTarget: toast_target,
-          toast,
-          toastPrefix: `批量下载 (${idx + 1}/${deduped.length})`,
-          alertOnFail: false,
-          addHistory: true,
-        });
-        if (result?.ok) {
-          successCount++;
-        } else {
-          failedCount++;
-          console.warn("[dy-dl]批量下载单项失败", media);
-        }
-      }
-
-      toast.update(`批量下载完成 (${successCount}/${deduped.length})`, 5 * 1000);
-      if (failedCount > 0) {
-        alert(
-          `[dy-dl]批量下载完成，成功 ${successCount} 个，失败 ${failedCount} 个。`
-        );
-      }
-    }
-
     // 下载封面
     async download_thumb() {
       if (!this.current_media) {
@@ -3581,75 +3733,33 @@ const requires = this;
       return root;
     }
   }
-  // #endregion
 
-  // #region DOM Patcher
-  class DOMPatcher {
+  // #region Profile Page Handler
+  class ProfilePageHandler {
     static FEED_CARD_SELECTOR =
       '.waterfall-videoCardContainer[href], [href*="/video/"][target="_blank"], [href*="/note/"][target="_blank"]';
-    /** @type {Downloader} */
-    downloader;
+
     /** @type {MediaHandler} */
     mediaHandler;
-    /** @type {VideoHandler} */
-    videoHandler;
-    /** @type {DanmakuHandler} */
-    danmakuHandler;
-    /** @type {MutationObserver} */
-    observer;
+    feedMediaCache = new Map();
+    listeners = new Set();
+    jobRunning = false;
+    jobStopRequested = false;
+    jobState = null;
+    taskModal = null;
+    taskTitle = null;
+    taskStatus = null;
+    taskHint = null;
+    taskActionButton = null;
+    taskStopButton = null;
+    taskResetButton = null;
+    taskSettingsButton = null;
 
     /**
-     * @param {{downloader: Downloader, mediaHandler: MediaHandler, videoHandler: VideoHandler, danmakuHandler: DanmakuHandler}} options
+     * @param {{mediaHandler: MediaHandler}} options
      */
     constructor(options) {
-      const { downloader, mediaHandler, videoHandler, danmakuHandler } =
-        options;
-      this.downloader = downloader;
-      this.mediaHandler = mediaHandler;
-      this.videoHandler = videoHandler;
-      this.danmakuHandler = danmakuHandler;
-      this.observer = new MutationObserver(this._handleMutations.bind(this));
-      this.feedMediaCache = new Map();
-      this.selectedFeedMedia = new Map();
-      this.feedBatchToolbar = null;
-      this.feedBatchCount = null;
-      this.feedBatchDownloadButton = null;
-      this.profileAutoToolbar = null;
-      this.profileAutoStatus = null;
-      this.profileAutoActionButton = null;
-      this.profileAutoStopButton = null;
-      this.profileAutoResetButton = null;
-      this.profileJobRunning = false;
-      this.profileJobStopRequested = false;
-      this.profileJobState = null;
-    }
-
-    /**
-     *
-     * @param node {HTMLElement}
-     * @returns {HTMLImageElement | null}
-     */
-    static findImage(node) {
-      let img;
-      let current = node;
-      while (current) {
-        img = current.querySelector("img");
-        if (img) return img;
-        current =
-          current.parentNode instanceof HTMLElement ? current.parentNode : null;
-      }
-      return null;
-    }
-
-    /**
-     *
-     * @param html {string}
-     * @returns {HTMLElement}
-     */
-    static render_html(html) {
-      const div = document.createElement("div");
-      div.innerHTML = html.trim();
-      return /** @type {HTMLElement} */ (div.children[0]);
+      this.mediaHandler = options.mediaHandler;
     }
 
     static findReactFiber(node) {
@@ -3671,27 +3781,72 @@ const requires = this;
       return match?.[1] || "";
     }
 
-    _extract_feed_media(card) {
-      let fiber = DOMPatcher.findReactFiber(card);
-      while (fiber) {
-        const props = fiber.memoizedProps;
-        const candidate =
-          props?.awemeInfo ||
-          props?.itemInfo?.awemeInfo ||
-          (props?.itemInfo?.awemeId ? props.itemInfo : null);
-        if (candidate?.awemeId) {
-          this.feedMediaCache.set(candidate.awemeId, candidate);
-          return candidate;
-        }
-        fiber = fiber.return;
-      }
+    _set_text_content(node, text) {
+      if (!node) return;
+      if (node.textContent === text) return;
+      node.textContent = text;
+    }
 
-      const awemeId = DOMPatcher.getAwemeIdFromHref(card.getAttribute("href"));
-      return awemeId ? this.feedMediaCache.get(awemeId) || null : null;
+    subscribe(listener) {
+      this.listeners.add(listener);
+      listener(this.getPanelSnapshot());
+      return () => {
+        this.listeners.delete(listener);
+      };
+    }
+
+    getPanelSnapshot() {
+      const enabled = Config.global.features.show_profile_panel !== false;
+      const isProfilePage = this._is_profile_page();
+      const counts = this._get_profile_download_counts();
+      const profile =
+        !this.jobRunning && isProfilePage ? this._get_profile_context() : null;
+      const profileName =
+        this.jobState?.profileName || profile?.profileName || "当前作者主页";
+      const statusLabel = this.jobRunning
+        ? "进行中"
+        : this.jobState?.status === "completed"
+        ? "已完成"
+        : this.jobState?.status === "paused"
+        ? "已暂停"
+        : "待开始";
+
+      return {
+        enabled,
+        isProfilePage,
+        jobRunning: this.jobRunning,
+        profileName,
+        counts,
+        summary: !isProfilePage && !this.jobRunning
+          ? "仅在作者主页显示入口。"
+          : `${profileName}\n状态：${statusLabel}  已发现：${counts.known || 0}  已下载：${counts.downloaded || 0}  失败：${counts.failed || 0}`,
+      };
+    }
+
+    _notify_panel() {
+      const snapshot = this.getPanelSnapshot();
+      this.listeners.forEach((listener) => {
+        try {
+          listener(snapshot);
+        } catch (error) {
+          console.error("[dy-dl]作者主页面板订阅失败", error);
+        }
+      });
+    }
+
+    refresh() {
+      if (!this._is_profile_page()) {
+        if (this.jobRunning) {
+          this.stop_profile_download_job();
+        }
+        this._notify_panel();
+        return;
+      }
+      this._notify_panel();
     }
 
     _is_profile_page() {
-      return location.pathname.startsWith("/user/");
+      return isProfilePagePath();
     }
 
     _get_profile_context() {
@@ -3707,9 +3862,7 @@ const requires = this;
           : scannedMedia?.authorInfo?.secUid || pathSecUid || "";
       const titleName = document.title.split("的抖音")[0]?.trim() || "";
       const profileName = scannedMedia?.authorInfo?.nickname || titleName;
-      const activeTab =
-        new URLSearchParams(location.search).get("showTab") ||
-        "post";
+      const activeTab = new URLSearchParams(location.search).get("showTab") || "post";
       const profileKey = `${secUid || pathSecUid || "self"}:${activeTab}`;
 
       return {
@@ -3720,78 +3873,488 @@ const requires = this;
       };
     }
 
-    _load_profile_job_state() {
-      const profile = this._get_profile_context();
-      if (!profile) return null;
-      const state = ProfileDownloadState.load(profile.profileKey, profile);
-      this.profileJobState = state;
-      return state;
+    _ensure_job_state(profile = this._get_profile_context()) {
+      if (!profile) {
+        this.jobState = null;
+        return null;
+      }
+      if (
+        !this.jobState ||
+        (!this.jobRunning && this.jobState.profileKey !== profile.profileKey)
+      ) {
+        this.jobState = ProfileDownloadState.load(profile.profileKey, profile);
+      }
+      return this.jobState;
     }
 
-    _save_profile_job_state(state) {
-      if (!state?.profileKey) return state;
-      const saved = ProfileDownloadState.save(state.profileKey, state);
-      this.profileJobState = saved;
-      return saved;
+    _save_job_state() {
+      if (!this.jobState?.profileKey) return this.jobState;
+      this.jobState = ProfileDownloadState.save(
+        this.jobState.profileKey,
+        this.jobState
+      );
+      return this.jobState;
+    }
+
+    _extract_feed_media(card) {
+      let fiber = ProfilePageHandler.findReactFiber(card);
+      while (fiber) {
+        const props = fiber.memoizedProps;
+        const candidate =
+          props?.awemeInfo ||
+          props?.itemInfo?.awemeInfo ||
+          (props?.itemInfo?.awemeId ? props.itemInfo : null);
+        if (candidate?.awemeId) {
+          this.feedMediaCache.set(candidate.awemeId, candidate);
+          return candidate;
+        }
+        fiber = fiber.return;
+      }
+
+      const awemeId = ProfilePageHandler.getAwemeIdFromHref(
+        card.getAttribute("href")
+      );
+      return awemeId ? this.feedMediaCache.get(awemeId) || null : null;
     }
 
     _collect_current_feed_media() {
       const medias = [];
       const seen = new Set();
-      document.querySelectorAll(DOMPatcher.FEED_CARD_SELECTOR).forEach((card) => {
-        const media = this._extract_feed_media(/** @type {HTMLElement} */ (card));
-        if (!media?.awemeId || seen.has(media.awemeId)) return;
-        seen.add(media.awemeId);
-        this.feedMediaCache.set(media.awemeId, media);
-        medias.push(media);
-      });
+      document
+        .querySelectorAll(ProfilePageHandler.FEED_CARD_SELECTOR)
+        .forEach((card) => {
+          const media = this._extract_feed_media(/** @type {HTMLElement} */ (card));
+          if (!media?.awemeId || seen.has(media.awemeId)) return;
+          seen.add(media.awemeId);
+          this.feedMediaCache.set(media.awemeId, media);
+          medias.push(media);
+        });
       return medias;
     }
 
-    _merge_profile_media_into_state(state, mediaList) {
-      const knownIds = new Set(state.knownIds || []);
+    _merge_profile_media_into_state(mediaList) {
+      if (!this.jobState) return;
+      const knownIds = new Set(this.jobState.knownIds || []);
       (mediaList || []).forEach((media) => {
         if (!media?.awemeId) return;
         knownIds.add(media.awemeId);
       });
-      state.knownIds = Array.from(knownIds);
-      return state;
+      this.jobState.knownIds = Array.from(knownIds);
     }
 
-    _mark_profile_item_downloaded(state, media) {
-      if (!media?.awemeId) return state;
-      const downloadedIds = new Set(state.downloadedIds || []);
+    _mark_profile_item_downloaded(media) {
+      if (!this.jobState || !media?.awemeId) return;
+      const downloadedIds = new Set(this.jobState.downloadedIds || []);
       downloadedIds.add(media.awemeId);
-      state.downloadedIds = Array.from(downloadedIds);
-      if (state.failedItems?.[media.awemeId]) {
-        delete state.failedItems[media.awemeId];
+      this.jobState.downloadedIds = Array.from(downloadedIds);
+      if (this.jobState.failedItems?.[media.awemeId]) {
+        delete this.jobState.failedItems[media.awemeId];
       }
-      return state;
     }
 
-    _mark_profile_item_failed(state, media, reason = "unknown") {
-      if (!media?.awemeId) return state;
-      const prev = state.failedItems?.[media.awemeId] || {};
-      state.failedItems = state.failedItems || {};
-      state.failedItems[media.awemeId] = {
+    _mark_profile_item_failed(media, reason = "unknown") {
+      if (!this.jobState || !media?.awemeId) return;
+      const prev = this.jobState.failedItems?.[media.awemeId] || {};
+      this.jobState.failedItems = this.jobState.failedItems || {};
+      this.jobState.failedItems[media.awemeId] = {
         count: Number(prev.count || 0) + 1,
         reason,
         updatedAt: Date.now(),
         desc: media.desc || prev.desc || "",
       };
-      return state;
     }
 
-    _get_profile_download_counts(state) {
+    _get_profile_download_counts() {
       return {
-        known: state?.knownIds?.length || 0,
-        downloaded: state?.downloadedIds?.length || 0,
-        failed: Object.keys(state?.failedItems || {}).length,
+        known: this.jobState?.knownIds?.length || 0,
+        downloaded: this.jobState?.downloadedIds?.length || 0,
+        failed: Object.keys(this.jobState?.failedItems || {}).length,
       };
     }
 
+    open_profile_download_modal() {
+      if (!this._is_profile_page()) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+
+      this._ensure_job_state();
+      if (this.taskModal?.overlay?.isConnected) {
+        this._render_task_modal();
+        return;
+      }
+
+      const modal = new Modal((root, overlay) => {
+        overlay.style.zIndex = "999999";
+        root.style.width = "520px";
+        root.style.maxWidth = "calc(100vw - 32px)";
+        root.style.padding = "0";
+        root.style.overflow = "hidden";
+
+        const container = document.createElement("div");
+        Object.assign(container.style, {
+          display: "flex",
+          flexDirection: "column",
+          gap: "14px",
+          padding: "20px",
+          fontFamily: "sans-serif",
+        });
+
+        const title = document.createElement("div");
+        Object.assign(title.style, {
+          fontSize: "18px",
+          fontWeight: "600",
+          color: "#111",
+        });
+
+        const status = document.createElement("div");
+        Object.assign(status.style, {
+          whiteSpace: "pre-wrap",
+          lineHeight: "1.6",
+          color: "#333",
+          fontSize: "14px",
+        });
+
+        const hint = document.createElement("div");
+        Object.assign(hint.style, {
+          color: "#666",
+          fontSize: "12px",
+          lineHeight: "1.6",
+        });
+
+        const actions = document.createElement("div");
+        Object.assign(actions.style, {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "10px",
+        });
+
+        const buildButton = (label, bg = "#f3f4f6", color = "#111") => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = label;
+          Object.assign(button.style, {
+            border: "none",
+            borderRadius: "10px",
+            padding: "9px 14px",
+            cursor: "pointer",
+            background: bg,
+            color,
+            fontSize: "13px",
+          });
+          return button;
+        };
+
+        const actionButton = buildButton("开始全量", "#fe2c55", "#fff");
+        const stopButton = buildButton("停止");
+        const resetButton = buildButton("重置记录");
+        const settingsButton = buildButton("设置");
+        const closeButton = buildButton("关闭");
+
+        actionButton.addEventListener("click", () => {
+          this.start_profile_download_job();
+        });
+        stopButton.addEventListener("click", () => {
+          this.stop_profile_download_job();
+        });
+        resetButton.addEventListener("click", () => {
+          this.reset_profile_download_job_state();
+        });
+        settingsButton.addEventListener("click", () => {
+          this.mediaHandler.open_config_modal();
+        });
+        closeButton.addEventListener("click", () => {
+          modal.close();
+        });
+
+        actions.append(
+          actionButton,
+          stopButton,
+          resetButton,
+          settingsButton,
+          closeButton
+        );
+        container.append(title, status, hint, actions);
+        root.appendChild(container);
+
+        this.taskTitle = title;
+        this.taskStatus = status;
+        this.taskHint = hint;
+        this.taskActionButton = actionButton;
+        this.taskStopButton = stopButton;
+        this.taskResetButton = resetButton;
+        this.taskSettingsButton = settingsButton;
+      });
+
+      const closeModal = modal.close.bind(modal);
+      modal.close = () => {
+        closeModal();
+        if (this.taskModal === modal) {
+          this.taskModal = null;
+          this.taskTitle = null;
+          this.taskStatus = null;
+          this.taskHint = null;
+          this.taskActionButton = null;
+          this.taskStopButton = null;
+          this.taskResetButton = null;
+          this.taskSettingsButton = null;
+        }
+      };
+
+      this.taskModal = modal;
+      this._render_task_modal();
+    }
+
+    _render_task_modal() {
+      this._notify_panel();
+      if (!this.taskModal) return;
+
+      const isProfilePage = this._is_profile_page();
+      const profile =
+        !this.jobRunning && isProfilePage ? this._get_profile_context() : null;
+      if (profile) {
+        this._ensure_job_state(profile);
+      }
+
+      const counts = this._get_profile_download_counts();
+      const profileName =
+        this.jobState?.profileName || profile?.profileName || "当前作者主页";
+      const statusLabel = this.jobRunning
+        ? "进行中"
+        : this.jobState?.status === "completed"
+        ? "已完成"
+        : this.jobState?.status === "paused"
+        ? "已暂停"
+        : "待开始";
+
+      if (this.taskTitle) {
+        this._set_text_content(
+          this.taskTitle,
+          `作者主页下载任务 - ${profileName}`
+        );
+      }
+
+      if (this.taskStatus) {
+        if (!isProfilePage && !this.jobRunning) {
+          this._set_text_content(
+            this.taskStatus,
+            "请先打开作者主页，再开始全量下载。"
+          );
+        } else {
+          this._set_text_content(
+            this.taskStatus,
+            `状态：${statusLabel}\n已发现：${counts.known || 0}\n已下载：${counts.downloaded || 0}\n失败：${counts.failed || 0}`
+          );
+        }
+      }
+
+      if (this.taskHint) {
+        this._set_text_content(
+          this.taskHint,
+          this.jobRunning
+            ? "任务运行时会自动向下滚动当前作者主页并下载未处理作品。离开作者主页后任务会自动暂停。"
+            : "点击“开始全量”后会自动按当前作者主页的作品列表轮询下载；关闭弹窗不会丢失已记录的进度。"
+        );
+      }
+
+      if (this.taskActionButton) {
+        this._set_text_content(
+          this.taskActionButton,
+          counts.downloaded > 0 || counts.failed > 0
+            ? "继续/补漏"
+            : "开始全量"
+        );
+        this.taskActionButton.disabled = !isProfilePage || this.jobRunning;
+        this.taskActionButton.style.opacity =
+          !isProfilePage || this.jobRunning ? "0.6" : "1";
+      }
+
+      if (this.taskStopButton) {
+        this.taskStopButton.disabled = !this.jobRunning;
+        this.taskStopButton.style.opacity = this.jobRunning ? "1" : "0.6";
+      }
+
+      if (this.taskResetButton) {
+        this.taskResetButton.disabled = !isProfilePage;
+        this.taskResetButton.style.opacity = isProfilePage ? "1" : "0.6";
+      }
+
+      this._notify_panel();
+    }
+
+    stop_profile_download_job() {
+      this.jobStopRequested = true;
+      if (this.jobState?.profileKey) {
+        this.jobState.status = "paused";
+        this._save_job_state();
+      }
+      this._render_task_modal();
+    }
+
+    reset_profile_download_job_state() {
+      const profile = this._get_profile_context();
+      if (!profile) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+      if (!confirm("确定清空当前作者主页的下载记录吗？")) {
+        return;
+      }
+      if (this.jobRunning) {
+        this.stop_profile_download_job();
+      }
+      ProfileDownloadState.reset(profile.profileKey);
+      this.jobState = ProfileDownloadState.create_default(profile);
+      this._render_task_modal();
+    }
+
+    async start_profile_download_job() {
+      if (!this._is_profile_page()) {
+        alert("[dy-dl]请在作者主页中使用全量下载。");
+        return;
+      }
+      if (this.jobRunning) {
+        return;
+      }
+      if (this.mediaHandler.downloading) {
+        alert("[dy-dl]当前已有下载任务在进行中，请稍后再试。");
+        return;
+      }
+
+      this.open_profile_download_modal();
+      const releaseLock = this.mediaHandler._flag_start_download();
+      this.jobRunning = true;
+      this.jobStopRequested = false;
+      this._render_task_modal();
+      try {
+        await this._run_profile_download_job_logic();
+      } finally {
+        this.jobRunning = false;
+        this.jobStopRequested = false;
+        releaseLock();
+        this._render_task_modal();
+      }
+    }
+
+    async _run_profile_download_job_logic() {
+      const profile = this._get_profile_context();
+      if (!profile) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+
+      this._ensure_job_state(profile);
+      this.jobState.status = "running";
+      this.jobState.lastRunAt = Date.now();
+      this.jobState.completedAt = 0;
+      this._save_job_state();
+      this._render_task_modal();
+
+      const toastTarget = this.taskActionButton;
+      const toast = createToast(toastTarget, 0);
+      let idleRounds = 0;
+
+      while (!this.jobStopRequested) {
+        if (!this._is_profile_page()) {
+          this.jobStopRequested = true;
+          break;
+        }
+
+        const mediaList = this._collect_current_feed_media();
+        this._merge_profile_media_into_state(mediaList);
+        this._save_job_state();
+        this._render_task_modal();
+
+        const downloadedSet = new Set(this.jobState?.downloadedIds || []);
+        const pendingMedia = mediaList.filter(
+          (media) => media?.awemeId && !downloadedSet.has(media.awemeId)
+        );
+
+        if (pendingMedia.length > 0) {
+          idleRounds = 0;
+          for (let idx = 0; idx < pendingMedia.length; idx++) {
+            if (this.jobStopRequested) break;
+            const media = pendingMedia[idx];
+            const counts = this._get_profile_download_counts();
+            toast.update(
+              `作者全量 (${counts.downloaded + 1}/${counts.known || "?"}) ${
+                media.desc || media.awemeId
+              }`
+            );
+            const result = await this.mediaHandler._download_media_logic(media, {
+              toastTarget,
+              toast,
+              toastPrefix: "作者全量",
+              alertOnFail: false,
+              addHistory: true,
+            });
+
+            if (result?.ok) {
+              this._mark_profile_item_downloaded(media);
+            } else {
+              this._mark_profile_item_failed(
+                media,
+                result?.reason || "download_failed"
+              );
+            }
+            this._save_job_state();
+            this._render_task_modal();
+          }
+          continue;
+        }
+
+        toast.update(
+          `作者全量：已扫到 ${this.jobState?.knownIds?.length || 0} 个，继续向下检查...`
+        );
+        const beforeKnown = this.jobState?.knownIds?.length || 0;
+        const didScroll = await this._scroll_profile_page_once();
+        const afterMedia = this._collect_current_feed_media();
+        this._merge_profile_media_into_state(afterMedia);
+        this._save_job_state();
+        this._render_task_modal();
+
+        const foundNewMedia = (this.jobState?.knownIds?.length || 0) > beforeKnown;
+        if (!didScroll && !foundNewMedia) {
+          idleRounds++;
+        } else if (!foundNewMedia) {
+          idleRounds++;
+        } else {
+          idleRounds = 0;
+        }
+
+        if (idleRounds >= 3) {
+          break;
+        }
+      }
+
+      if (this.jobStopRequested) {
+        this.jobState.status = "paused";
+        this._save_job_state();
+        toast.update(
+          this._is_profile_page()
+            ? "作者全量下载已暂停"
+            : "已离开作者主页，任务已暂停",
+          3000
+        );
+      } else {
+        this.jobState.status = "completed";
+        this.jobState.completedAt = Date.now();
+        this._save_job_state();
+        const counts = this._get_profile_download_counts();
+        toast.update(
+          `作者全量完成：已下载 ${counts.downloaded} 个，失败 ${counts.failed} 个`,
+          5000
+        );
+        if (counts.failed > 0) {
+          alert(
+            `[dy-dl]作者主页全量下载完成，成功 ${counts.downloaded} 个，失败 ${counts.failed} 个。下次点击“继续/补漏”会跳过已下载作品。`
+          );
+        }
+      }
+    }
+
     _find_profile_scroll_container() {
-      const firstCard = document.querySelector(DOMPatcher.FEED_CARD_SELECTOR);
+      const firstCard = document.querySelector(ProfilePageHandler.FEED_CARD_SELECTOR);
       let current =
         firstCard instanceof HTMLElement ? firstCard.parentElement : null;
       while (current instanceof HTMLElement) {
@@ -3822,15 +4385,16 @@ const requires = this;
         container === document.documentElement ||
         container === document.scrollingElement;
 
-      const beforeTop = isDocumentScroll
-        ? window.scrollY
-        : container.scrollTop;
+      const beforeTop = isDocumentScroll ? window.scrollY : container.scrollTop;
       const clientHeight = isDocumentScroll
         ? window.innerHeight
         : container.clientHeight;
       const scrollHeight = container.scrollHeight;
       const maxTop = Math.max(0, scrollHeight - clientHeight);
-      const nextTop = Math.min(beforeTop + Math.max(clientHeight * 0.85, 480), maxTop);
+      const nextTop = Math.min(
+        beforeTop + Math.max(clientHeight * 0.85, 480),
+        maxTop
+      );
 
       if (nextTop <= beforeTop + 4) {
         return false;
@@ -3844,529 +4408,69 @@ const requires = this;
       await new Promise((resolve) => setTimeout(resolve, 1200));
       return true;
     }
+  }
+  // #endregion
 
-    _ensure_profile_auto_toolbar() {
-      if (!this._is_profile_page()) {
-        if (this.profileAutoToolbar?.isConnected) {
-          this.profileAutoToolbar.remove();
-        }
-        this.profileAutoToolbar = null;
-        return null;
-      }
+  // #region DOM Patcher
+  class DOMPatcher {
+    /** @type {Downloader} */
+    downloader;
+    /** @type {MediaHandler} */
+    mediaHandler;
+    /** @type {VideoHandler} */
+    videoHandler;
+    /** @type {DanmakuHandler} */
+    danmakuHandler;
+    /** @type {ProfilePageHandler} */
+    profilePageHandler;
+    /** @type {MutationObserver} */
+    observer;
 
-      if (this.profileAutoToolbar?.isConnected) {
-        return this.profileAutoToolbar;
-      }
-
-      const toolbar = document.createElement("div");
-      Object.assign(toolbar.style, {
-        position: "fixed",
-        right: "24px",
-        bottom: "90px",
-        zIndex: "999999",
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        padding: "10px 12px",
-        borderRadius: "14px",
-        background: "rgba(18, 18, 20, 0.92)",
-        color: "#fff",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.22)",
-        backdropFilter: "blur(10px)",
-        fontSize: "13px",
-        fontFamily: "sans-serif",
-      });
-
-      const status = document.createElement("span");
-      status.style.minWidth = "180px";
-      status.textContent = "作者全量下载";
-
-      const buildButton = (label, bg = "rgba(255,255,255,0.12)") => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = label;
-        Object.assign(button.style, {
-          border: "none",
-          borderRadius: "10px",
-          padding: "7px 10px",
-          cursor: "pointer",
-          background: bg,
-          color: "#fff",
-          fontSize: "12px",
-        });
-        return button;
-      };
-
-      const actionButton = buildButton("开始全量", "#0f8f5f");
-      const stopButton = buildButton("停止", "rgba(255,255,255,0.12)");
-      const resetButton = buildButton("重置记录");
-      const settingsButton = buildButton("设置");
-
-      actionButton.addEventListener("click", () => {
-        this.start_profile_download_job();
-      });
-      stopButton.addEventListener("click", () => {
-        this.stop_profile_download_job();
-      });
-      resetButton.addEventListener("click", () => {
-        this.reset_profile_download_job_state();
-      });
-      settingsButton.addEventListener("click", () => {
-        this.mediaHandler.open_config_modal();
-      });
-
-      toolbar.append(
-        status,
-        actionButton,
-        stopButton,
-        resetButton,
-        settingsButton
-      );
-      document.body.appendChild(toolbar);
-
-      this.profileAutoToolbar = toolbar;
-      this.profileAutoStatus = status;
-      this.profileAutoActionButton = actionButton;
-      this.profileAutoStopButton = stopButton;
-      this.profileAutoResetButton = resetButton;
-      this.profileAutoSettingsButton = settingsButton;
-      return toolbar;
+    /**
+     * @param {{downloader: Downloader, mediaHandler: MediaHandler, videoHandler: VideoHandler, danmakuHandler: DanmakuHandler, profilePageHandler: ProfilePageHandler}} options
+     */
+    constructor(options) {
+      const {
+        downloader,
+        mediaHandler,
+        videoHandler,
+        danmakuHandler,
+        profilePageHandler,
+      } = options;
+      this.downloader = downloader;
+      this.mediaHandler = mediaHandler;
+      this.videoHandler = videoHandler;
+      this.danmakuHandler = danmakuHandler;
+      this.profilePageHandler = profilePageHandler;
+      this.observer = new MutationObserver(this._handleMutations.bind(this));
     }
 
-    _sync_profile_auto_toolbar(state = null) {
-      const toolbar = this._ensure_profile_auto_toolbar();
-      if (!toolbar) return;
-
-      const nextState = state || this._load_profile_job_state();
-      const counts = this._get_profile_download_counts(nextState);
-      const profileName = nextState?.profileName || "当前主页";
-      const statusLabel = this.profileJobRunning
-        ? "进行中"
-        : nextState?.status === "completed"
-        ? "已完成"
-        : nextState?.status === "paused"
-        ? "已暂停"
-        : "待开始";
-
-      if (this.profileAutoStatus) {
-        this.profileAutoStatus.textContent = `${profileName}: ${statusLabel} ${counts.downloaded}/${counts.known || "?"}，失败 ${counts.failed}`;
+    /**
+     *
+     * @param node {HTMLElement}
+     * @returns {HTMLImageElement | null}
+     */
+    static findImage(node) {
+      let img;
+      let current = node;
+      while (current) {
+        img = current.querySelector("img");
+        if (img) return img;
+        current =
+          current.parentNode instanceof HTMLElement ? current.parentNode : null;
       }
-      if (this.profileAutoActionButton) {
-        this.profileAutoActionButton.textContent =
-          counts.downloaded > 0 || counts.failed > 0 ? "继续/补漏" : "开始全量";
-        this.profileAutoActionButton.disabled = this.profileJobRunning;
-        this.profileAutoActionButton.style.opacity = this.profileJobRunning
-          ? "0.6"
-          : "1";
-      }
-      if (this.profileAutoStopButton) {
-        this.profileAutoStopButton.disabled = !this.profileJobRunning;
-        this.profileAutoStopButton.style.opacity = this.profileJobRunning
-          ? "1"
-          : "0.6";
-      }
+      return null;
     }
 
-    stop_profile_download_job() {
-      this.profileJobStopRequested = true;
-      if (this.profileJobState?.profileKey) {
-        this.profileJobState.status = "paused";
-        this._save_profile_job_state(this.profileJobState);
-      }
-      this._sync_profile_auto_toolbar();
-    }
-
-    reset_profile_download_job_state() {
-      const profile = this._get_profile_context();
-      if (!profile) {
-        alert("[dy-dl]请先打开作者主页。");
-        return;
-      }
-      if (!confirm("确定清空当前作者主页的下载记录吗？")) {
-        return;
-      }
-      if (this.profileJobRunning) {
-        this.stop_profile_download_job();
-      }
-      ProfileDownloadState.reset(profile.profileKey);
-      this.profileJobState = ProfileDownloadState.create_default(profile);
-      this._sync_profile_auto_toolbar(this.profileJobState);
-    }
-
-    async start_profile_download_job() {
-      if (!this._is_profile_page()) {
-        alert("[dy-dl]请在作者主页中使用全量下载。");
-        return;
-      }
-      if (this.profileJobRunning) {
-        return;
-      }
-      if (this.mediaHandler.downloading) {
-        alert("[dy-dl]当前已有下载任务在进行中，请稍后再试。");
-        return;
-      }
-
-      const releaseLock = this.mediaHandler._flag_start_download();
-      this.profileJobRunning = true;
-      this.profileJobStopRequested = false;
-      try {
-        await this._run_profile_download_job_logic();
-      } finally {
-        this.profileJobRunning = false;
-        this.profileJobStopRequested = false;
-        releaseLock();
-        this._sync_profile_auto_toolbar();
-      }
-    }
-
-    async _run_profile_download_job_logic() {
-      const profile = this._get_profile_context();
-      if (!profile) {
-        alert("[dy-dl]请先打开作者主页。");
-        return;
-      }
-
-      let state = this._load_profile_job_state();
-      state.status = "running";
-      state.lastRunAt = Date.now();
-      state.completedAt = 0;
-      state = this._save_profile_job_state(state);
-      this._sync_profile_auto_toolbar(state);
-
-      const toast = createToast(
-        this.profileAutoActionButton || this.profileAutoToolbar,
-        0
-      );
-
-      let idleRounds = 0;
-      while (!this.profileJobStopRequested) {
-        const mediaList = this._collect_current_feed_media();
-        state = this._merge_profile_media_into_state(state, mediaList);
-        state = this._save_profile_job_state(state);
-        this._sync_profile_auto_toolbar(state);
-
-        const downloadedSet = new Set(state.downloadedIds || []);
-        const pendingMedia = mediaList.filter(
-          (media) => media?.awemeId && !downloadedSet.has(media.awemeId)
-        );
-
-        if (pendingMedia.length > 0) {
-          idleRounds = 0;
-          for (let idx = 0; idx < pendingMedia.length; idx++) {
-            if (this.profileJobStopRequested) break;
-            const media = pendingMedia[idx];
-            const counts = this._get_profile_download_counts(state);
-            toast.update(
-              `作者全量 (${counts.downloaded + 1}/${counts.known || "?"}) ${
-                media.desc || media.awemeId
-              }`
-            );
-            const result = await this.mediaHandler._download_media_logic(media, {
-              toastTarget: this.profileAutoActionButton || this.profileAutoToolbar,
-              toast,
-              toastPrefix: "作者全量",
-              alertOnFail: false,
-              addHistory: true,
-            });
-
-            if (result?.ok) {
-              state = this._mark_profile_item_downloaded(state, media);
-            } else {
-              state = this._mark_profile_item_failed(
-                state,
-                media,
-                result?.reason || "download_failed"
-              );
-            }
-            state = this._save_profile_job_state(state);
-            this._sync_profile_auto_toolbar(state);
-          }
-          continue;
-        }
-
-        toast.update(
-          `作者全量：已扫到 ${state.knownIds.length} 个，继续向下检查...`
-        );
-        const beforeKnown = state.knownIds.length;
-        const didScroll = await this._scroll_profile_page_once();
-        const afterMedia = this._collect_current_feed_media();
-        state = this._merge_profile_media_into_state(state, afterMedia);
-        state = this._save_profile_job_state(state);
-        this._sync_profile_auto_toolbar(state);
-
-        const foundNewMedia = state.knownIds.length > beforeKnown;
-        if (!didScroll && !foundNewMedia) {
-          idleRounds++;
-        } else if (!foundNewMedia) {
-          idleRounds++;
-        } else {
-          idleRounds = 0;
-        }
-
-        if (idleRounds >= 3) {
-          break;
-        }
-      }
-
-      if (this.profileJobStopRequested) {
-        state.status = "paused";
-        state = this._save_profile_job_state(state);
-        toast.update("作者全量下载已暂停", 3000);
-      } else {
-        state.status = "completed";
-        state.completedAt = Date.now();
-        state = this._save_profile_job_state(state);
-        const counts = this._get_profile_download_counts(state);
-        toast.update(
-          `作者全量完成：已下载 ${counts.downloaded} 个，失败 ${counts.failed} 个`,
-          5000
-        );
-        if (counts.failed > 0) {
-          alert(
-            `[dy-dl]作者主页全量下载完成，成功 ${counts.downloaded} 个，失败 ${counts.failed} 个。下次点击“继续/补漏”会跳过已下载作品。`
-          );
-        }
-      }
-    }
-
-    _ensure_feed_batch_toolbar() {
-      if (this.feedBatchToolbar?.isConnected) {
-        return this.feedBatchToolbar;
-      }
-
-      const toolbar = document.createElement("div");
-      Object.assign(toolbar.style, {
-        position: "fixed",
-        right: "24px",
-        bottom: "24px",
-        zIndex: "999999",
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        padding: "10px 12px",
-        borderRadius: "14px",
-        background: "rgba(18, 18, 20, 0.92)",
-        color: "#fff",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.22)",
-        backdropFilter: "blur(10px)",
-        fontSize: "13px",
-        fontFamily: "sans-serif",
-      });
-
-      const count = document.createElement("span");
-      count.textContent = "未选作品";
-      count.style.minWidth = "92px";
-
-      const buildButton = (label) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = label;
-        Object.assign(button.style, {
-          border: "none",
-          borderRadius: "10px",
-          padding: "7px 10px",
-          cursor: "pointer",
-          background: "rgba(255,255,255,0.12)",
-          color: "#fff",
-          fontSize: "12px",
-        });
-        return button;
-      };
-
-      const selectVisibleButton = buildButton("全选可见");
-      const clearButton = buildButton("清空");
-      const downloadButton = buildButton("下载选中");
-      downloadButton.style.background = "#fe2c55";
-
-      selectVisibleButton.addEventListener("click", () => {
-        this._select_visible_feed_cards();
-      });
-      clearButton.addEventListener("click", () => {
-        this._clear_feed_selection();
-      });
-      downloadButton.addEventListener("click", () => {
-        this.mediaHandler.download_media_list(
-          Array.from(this.selectedFeedMedia.values()),
-          downloadButton
-        );
-      });
-
-      toolbar.append(count, selectVisibleButton, clearButton, downloadButton);
-      document.body.appendChild(toolbar);
-
-      this.feedBatchToolbar = toolbar;
-      this.feedBatchCount = count;
-      this.feedBatchDownloadButton = downloadButton;
-      return toolbar;
-    }
-
-    _sync_feed_batch_toolbar() {
-      const toolbar = this._ensure_feed_batch_toolbar();
-      const enhancedCards = document.querySelectorAll("[data-dy-dl-feed-card]");
-      toolbar.style.display =
-        enhancedCards.length > 0 || this.selectedFeedMedia.size > 0
-          ? "flex"
-          : "none";
-
-      if (!this.feedBatchCount) return;
-
-      if (this.selectedFeedMedia.size === 0) {
-        this.feedBatchCount.textContent = `未选作品 (${enhancedCards.length})`;
-      } else {
-        this.feedBatchCount.textContent = `已选 ${this.selectedFeedMedia.size} 个`;
-      }
-    }
-
-    _set_feed_card_selected(card, selected) {
-      const badge = card.querySelector(".dy-dl-feed-select");
-      const checkbox = card.querySelector(".dy-dl-feed-checkbox");
-      if (!(badge instanceof HTMLElement) || !(checkbox instanceof HTMLInputElement)) {
-        return;
-      }
-      checkbox.checked = selected;
-      badge.style.background = selected ? "#fe2c55" : "rgba(0,0,0,0.55)";
-      badge.style.borderColor = selected ? "#fe2c55" : "rgba(255,255,255,0.25)";
-      badge.style.color = "#fff";
-      const label = badge.querySelector(".dy-dl-feed-select-label");
-      if (label) {
-        label.textContent = selected ? "已选" : "选择";
-      }
-    }
-
-    _toggle_feed_selection(media, selected) {
-      if (!media?.awemeId) return;
-      if (selected) {
-        this.selectedFeedMedia.set(media.awemeId, media);
-      } else {
-        this.selectedFeedMedia.delete(media.awemeId);
-      }
-      document
-        .querySelectorAll(`[data-dy-dl-aweme-id="${media.awemeId}"]`)
-        .forEach((card) =>
-          this._set_feed_card_selected(/** @type {HTMLElement} */ (card), selected)
-        );
-      this._sync_feed_batch_toolbar();
-    }
-
-    _clear_feed_selection() {
-      this.selectedFeedMedia.clear();
-      document.querySelectorAll("[data-dy-dl-feed-card]").forEach((card) => {
-        this._set_feed_card_selected(/** @type {HTMLElement} */ (card), false);
-      });
-      this._sync_feed_batch_toolbar();
-    }
-
-    _select_visible_feed_cards() {
-      document.querySelectorAll("[data-dy-dl-feed-card]").forEach((card) => {
-        const rect = card.getBoundingClientRect();
-        const isVisible =
-          rect.width > 0 &&
-          rect.height > 0 &&
-          rect.bottom > 0 &&
-          rect.right > 0 &&
-          rect.top < window.innerHeight &&
-          rect.left < window.innerWidth;
-        if (!isVisible) return;
-        const awemeId = card.getAttribute("data-dy-dl-aweme-id");
-        const media = awemeId ? this.feedMediaCache.get(awemeId) : null;
-        if (media) {
-          this._toggle_feed_selection(media, true);
-        }
-      });
-    }
-
-    _decorate_feed_card(card) {
-      if (!(card instanceof HTMLElement)) return;
-      if (card.dataset.dyDlFeedCard === "1") {
-        const awemeId = card.getAttribute("data-dy-dl-aweme-id");
-        if (awemeId && this.selectedFeedMedia.has(awemeId)) {
-          this._set_feed_card_selected(card, true);
-        }
-        this._sync_feed_batch_toolbar();
-        return;
-      }
-
-      const media = this._extract_feed_media(card);
-      if (!media?.awemeId) {
-        const retryCount = Number(card.dataset.dyDlFeedRetry || 0);
-        if (retryCount < 3) {
-          card.dataset.dyDlFeedRetry = String(retryCount + 1);
-          setTimeout(() => this._decorate_feed_card(card), 300 * (retryCount + 1));
-        }
-        return;
-      }
-
-      card.dataset.dyDlFeedCard = "1";
-      card.dataset.dyDlAwemeId = media.awemeId;
-      this.feedMediaCache.set(media.awemeId, media);
-
-      const computedPosition = window.getComputedStyle(card).position;
-      if (!computedPosition || computedPosition === "static") {
-        card.style.position = "relative";
-      }
-
-      const badge = document.createElement("label");
-      badge.className = "dy-dl-feed-select";
-      Object.assign(badge.style, {
-        position: "absolute",
-        top: "10px",
-        left: "10px",
-        zIndex: "5",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "6px",
-        padding: "6px 10px",
-        borderRadius: "999px",
-        background: "rgba(0,0,0,0.55)",
-        border: "1px solid rgba(255,255,255,0.25)",
-        color: "#fff",
-        fontSize: "12px",
-        fontFamily: "sans-serif",
-        cursor: "pointer",
-        userSelect: "none",
-      });
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.className = "dy-dl-feed-checkbox";
-      checkbox.style.margin = "0";
-      checkbox.style.cursor = "pointer";
-
-      const label = document.createElement("span");
-      label.className = "dy-dl-feed-select-label";
-      label.textContent = "选择";
-
-      const stopCardJump = (event) => {
-        event.stopPropagation();
-      };
-
-      ["click", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
-        badge.addEventListener(eventName, stopCardJump);
-      });
-
-      checkbox.addEventListener("change", (event) => {
-        event.stopPropagation();
-        this._toggle_feed_selection(media, checkbox.checked);
-      });
-
-      badge.append(checkbox, label);
-      card.appendChild(badge);
-      this._set_feed_card_selected(card, this.selectedFeedMedia.has(media.awemeId));
-      this._sync_feed_batch_toolbar();
-    }
-
-    _handle_feed_cards_in_node(node) {
-      if (!(node instanceof HTMLElement)) return;
-      if (node.matches?.(DOMPatcher.FEED_CARD_SELECTOR)) {
-        this._decorate_feed_card(node);
-      }
-      node
-        .querySelectorAll?.(DOMPatcher.FEED_CARD_SELECTOR)
-        .forEach((card) =>
-          this._decorate_feed_card(/** @type {HTMLElement} */ (card))
-        );
-      this._sync_feed_batch_toolbar();
-      this._sync_profile_auto_toolbar();
+    /**
+     *
+     * @param html {string}
+     * @returns {HTMLElement}
+     */
+    static render_html(html) {
+      const div = document.createElement("div");
+      div.innerHTML = html.trim();
+      return /** @type {HTMLElement} */ (div.children[0]);
     }
 
     /**
@@ -4379,7 +4483,6 @@ const requires = this;
             return;
           }
           const elementNode = /** @type {HTMLElement} */ (node);
-          this._handle_feed_cards_in_node(elementNode);
 
           // Tooltip for emoticons
           if (elementNode.classList.contains("semi-portal")) {
@@ -4388,35 +4491,31 @@ const requires = this;
             );
             if (tooltipNode) {
               setTimeout(() => {
-                // Delay to ensure content is populated
                 this._handleTooltip(/** @type {HTMLElement} */ (tooltipNode));
               });
               return;
             }
           }
-          // Fullscreen image modal
-          // Heuristic: direct body child, no classes, contains an img
           if (
             elementNode.parentElement === document.body &&
             elementNode.classList.length === 0
           ) {
             setTimeout(() => {
-              // Delay for modal rendering
               this._handleModal(elementNode);
             });
             return;
           }
-          // Video player controls
           if (
             elementNode.localName === "xg-controls" ||
             elementNode.querySelector("xg-controls")
           ) {
-            // FIXME: 这里有个问题，feed里面还有直播流，直播画面不应该有下载按钮，因为没用（不过有也没什么，不点就行了...）
             this._handleXgControl(/** @type {HTMLElement} */ (elementNode));
             return;
           }
         });
       });
+
+      this.profilePageHandler.refresh();
     }
 
     /**
@@ -4425,24 +4524,21 @@ const requires = this;
     _handleModal(modalNode) {
       const close_icon = modalNode.querySelector("#svg_icon_ic_close");
       const img = modalNode.querySelector("img");
-      // Modals often have a specific container for the image, let's try to find it.
-      // This might be fragile. The original used img.parentElement.
       const container =
         img?.closest('div[style*="transform: scale(1)"] > div') ||
         img?.parentElement;
 
       if (!close_icon || !img || !container) return;
-      if (container.querySelector(".dy-dl-modal-btn")) return; // Button already exists
+      if (container.querySelector(".dy-dl-modal-btn")) return;
 
       const downloadButton = document.createElement("div");
       downloadButton.textContent = "下载图片";
-      downloadButton.className = "LV01TNDE dy-dl-modal-btn"; // Added a specific class for checking
+      downloadButton.className = "LV01TNDE dy-dl-modal-btn";
       downloadButton.addEventListener("click", (e) => {
-        e.stopPropagation(); // Prevent modal from closing
+        e.stopPropagation();
         const imgSrc = img.src;
         this.downloader.download_file(imgSrc, "douyin_image");
       });
-      // Styling from original script
       downloadButton.style.position = "absolute";
       downloadButton.style.bottom = "35px";
       downloadButton.style.right = "35px";
@@ -4451,7 +4547,7 @@ const requires = this;
       downloadButton.style.padding = "5px 10px";
       downloadButton.style.borderRadius = "4px";
       downloadButton.style.fontSize = "16px";
-      downloadButton.style.zIndex = "999999"; // Ensure it's on top of other modal elements
+      downloadButton.style.zIndex = "999999";
       downloadButton.style.cursor = "pointer";
       container.appendChild(downloadButton);
     }
@@ -4465,20 +4561,20 @@ const requires = this;
 
       if (!tooltipContent.textContent?.includes("添加到表情")) return;
 
-      const imgNode = DOMPatcher.findImage(tooltipNode); // Search upwards from tooltip wrapper
+      const imgNode = DOMPatcher.findImage(tooltipNode);
       if (!imgNode?.src) return;
 
-      if (tooltipContent.querySelector(".download-button")) return; // Button already exists
+      if (tooltipContent.querySelector(".download-button")) return;
 
       const downloadButton = document.createElement("div");
       downloadButton.textContent = "下载表情包";
-      downloadButton.className = "LV01TNDE download-button"; // Class from original
+      downloadButton.className = "LV01TNDE download-button";
 
-      downloadButton.style.cursor = "pointer"; // Make it look clickable
-      downloadButton.style.paddingTop = "4px"; // Add some spacing
+      downloadButton.style.cursor = "pointer";
+      downloadButton.style.paddingTop = "4px";
 
       downloadButton.addEventListener("click", (e) => {
-        e.stopPropagation(); // Prevent other tooltip actions
+        e.stopPropagation();
         const imgSrc = imgNode.src;
         this.downloader.download_file(imgSrc, "douyin_emoticon");
       });
@@ -4492,7 +4588,7 @@ const requires = this;
     _handleXgControl(xg_control_node) {
       const right_grid = xg_control_node.querySelector(".xg-right-grid");
       if (!right_grid) return;
-      if (right_grid.querySelector(".dy-dl-video-btn")) return; // Button already exists
+      if (right_grid.querySelector(".dy-dl-video-btn")) return;
 
       const btn = new TooltipsButton(
         "插件",
@@ -4562,15 +4658,10 @@ const requires = this;
             },
           },
         ],
-        (e) => {
-          // TODO: 没用... 会被劫持，所以移动到上面的 item 中去了
-          // e.stopPropagation();
-          // this.downloadCurrentMediaFn();
-        }
+        (e) => {}
       );
       const downloadButton = btn.render();
 
-      // Try to insert before volume or settings for better placement
       const qualitySwitch = right_grid.querySelector(
         ".xgplayer-quality-setting"
       );
@@ -4580,7 +4671,7 @@ const requires = this;
       } else if (volumeControl) {
         right_grid.insertBefore(downloadButton, volumeControl);
       } else {
-        right_grid.appendChild(downloadButton); // Fallback
+        right_grid.appendChild(downloadButton);
       }
     }
 
@@ -4595,13 +4686,7 @@ const requires = this;
         .forEach((controls) =>
           this._handleXgControl(/** @type {HTMLElement} */ (controls))
         );
-      document
-        .querySelectorAll(DOMPatcher.FEED_CARD_SELECTOR)
-        .forEach((card) =>
-          this._decorate_feed_card(/** @type {HTMLElement} */ (card))
-        );
-      this._sync_feed_batch_toolbar();
-      this._sync_profile_auto_toolbar();
+      this.profilePageHandler.refresh();
     }
   }
   // #endregion
@@ -4933,12 +5018,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const mediaHandler = new MediaHandler(downloader);
   const videoHandler = new VideoHandler();
   const danmakuHandler = new DanmakuHandler();
-  // Pass the already bound method from mediaHandler instance
+  const profilePageHandler = new ProfilePageHandler({
+    mediaHandler,
+  });
+  Config.subscribe(() => {
+    profilePageHandler.refresh();
+  });
+  new FloatingPanel({
+    mediaHandler,
+    profilePageHandler,
+  });
   const domPatcher = new DOMPatcher({
     downloader,
     mediaHandler,
     videoHandler,
     danmakuHandler,
+    profilePageHandler,
   });
   const hotkeyManager = new HotkeyManager();
 
