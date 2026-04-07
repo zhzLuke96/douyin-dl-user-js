@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.13
+// @version         1.3.15
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -386,6 +386,86 @@ const requires = this;
     }
   }
   // #endregion
+
+  class ProfileDownloadState {
+    static STORAGE_PREFIX = "__douyin-dl-profile-state__:";
+
+    static _storage_key(profileKey) {
+      return `${this.STORAGE_PREFIX}${profileKey}`;
+    }
+
+    static create_default(profile = {}) {
+      return {
+        version: 1,
+        profileKey: profile.profileKey || "",
+        secUid: profile.secUid || "",
+        profileName: profile.profileName || "",
+        tabKey: profile.tabKey || "post",
+        status: "idle",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastRunAt: 0,
+        completedAt: 0,
+        knownIds: [],
+        downloadedIds: [],
+        failedItems: {},
+      };
+    }
+
+    static load(profileKey, profile = {}) {
+      try {
+        const raw = localStorage.getItem(this._storage_key(profileKey));
+        if (!raw) {
+          return this.create_default({
+            ...profile,
+            profileKey,
+          });
+        }
+        const parsed = JSON.parse(raw);
+        return {
+          ...this.create_default({
+            ...profile,
+            profileKey,
+          }),
+          ...parsed,
+          profileKey,
+          secUid: profile.secUid || parsed.secUid || "",
+          profileName: profile.profileName || parsed.profileName || "",
+          tabKey: profile.tabKey || parsed.tabKey || "post",
+          knownIds: Array.isArray(parsed.knownIds) ? parsed.knownIds : [],
+          downloadedIds: Array.isArray(parsed.downloadedIds)
+            ? parsed.downloadedIds
+            : [],
+          failedItems:
+            parsed.failedItems && typeof parsed.failedItems === "object"
+              ? parsed.failedItems
+              : {},
+        };
+      } catch (error) {
+        console.error("[dy-dl]加载作者下载状态失败", error);
+        return this.create_default({
+          ...profile,
+          profileKey,
+        });
+      }
+    }
+
+    static save(profileKey, state) {
+      const nextState = {
+        ...state,
+        updatedAt: Date.now(),
+      };
+      localStorage.setItem(
+        this._storage_key(profileKey),
+        JSON.stringify(nextState)
+      );
+      return nextState;
+    }
+
+    static reset(profileKey) {
+      localStorage.removeItem(this._storage_key(profileKey));
+    }
+  }
 
   // #region 图片转码压缩
   /**
@@ -993,7 +1073,7 @@ const requires = this;
      * @param {string} url
      * @param {string} filename_input
      */
-    async download_one_url(url, filename_input) {
+    async download_one_url(url, filename_input, options = {}) {
       const { using_downloader, downloader_config } = Config.global.features;
       switch (using_downloader) {
         case "browser":
@@ -1021,7 +1101,11 @@ const requires = this;
             .invoke_download(
               url,
               using_downloader,
-              downloader_config[using_downloader].dir
+              downloader_config[using_downloader].dir,
+              {
+                filename_input,
+                media: options.media,
+              }
             )
             .then((x) => ({ ok: x, error_msg: "" }));
         default: {
@@ -1034,7 +1118,13 @@ const requires = this;
     /**
      * 下载文件 根据所有url逐一尝试下载
      */
-    async download_file(source, filename_input = "", fallback_src = []) {
+    async download_file(
+      source,
+      filename_input = "",
+      fallback_src = [],
+      options = {}
+    ) {
+      const { silent = false } = options;
       let url_sources = [source, ...fallback_src].filter(
         (x) => typeof x === "string" && x.length > 0
       );
@@ -1045,21 +1135,25 @@ const requires = this;
       for (const url of url_sources.values()) {
         const { ok, error_msg: emsg } = await this.download_one_url(
           url,
-          filename_input
+          filename_input,
+          options
         );
         error_msg = error_msg || emsg;
         if (ok) {
-          return;
+          return true;
         }
       }
 
       // If all downloads failed, show an alert.
       // If the first attempt failed with a "Failed to fetch" style error, replicate original alert.
-      if (error_msg && url_sources.length === 1) {
-        alert(error_msg);
-      } else {
-        alert(`[dy-dl]所有尝试下载都失败，请刷新重试`);
+      if (!silent) {
+        if (error_msg && url_sources.length === 1) {
+          alert(error_msg);
+        } else {
+          alert(`[dy-dl]所有尝试下载都失败，请刷新重试`);
+        }
       }
+      return false;
     }
   }
   // #endregion
@@ -1168,45 +1262,82 @@ const requires = this;
      * @param {"idm" | "aria2" | "bc" | "abdm"} dl_name 下载器名称
      * @param {void | null | {video: string, image: string, other: string}} dir_config 下载文件夹配置
      */
-    async invoke_download(url, dl_name = "abdm", dir_config) {
-      const input_filename = await mediaHandler._build_filename();
+    _resolve_dir_template(input, context, fallback = "") {
+      if (typeof input !== "string") return fallback;
+
+      const raw = input.trim();
+      if (!raw) return fallback;
+
+      if (!raw.includes("${") && !raw.startsWith("`")) {
+        return raw;
+      }
+
+      const templateCode = raw.startsWith("`")
+        ? raw
+        : `\`${raw.replace(/\\/g, "\\\\").replace(/`/g, "\\`")}\``;
+
+      try {
+        const resolved = runInContext(context, templateCode);
+        return typeof resolved === "string" && resolved.trim()
+          ? resolved
+          : fallback;
+      } catch (error) {
+        console.error("[dy-dl]解析下载目录模板失败", error);
+        return fallback;
+      }
+    }
+
+    /**
+     * 简化入口
+     * @param {string} url
+     * @param {"idm" | "aria2" | "bc" | "abdm"} dl_name 下载器名称
+     * @param {void | null | {video: string, image: string, other: string}} dir_config 下载文件夹配置
+     * @param {{filename_input?: string, media?: import("./types").DouyinMedia.MediaRoot | null}} [options]
+     */
+    async invoke_download(url, dl_name = "abdm", dir_config, options = {}) {
+      const media = options.media || mediaHandler.current_media;
+      const input_filename =
+        options.filename_input ||
+        (media ? mediaHandler._build_filename(media) : "download");
       const { filename, isVideo, isImage } =
         await mediaHandler.downloader.prepare_filename(
           url,
           normalizeFilename(input_filename)
         );
-      const user_dir = normalizeFilename(
-        `${mediaHandler.current_media.authorInfo.uid}_${mediaHandler.current_media.authorInfo.nickname}`
+      const authorInfo = media?.authorInfo || {};
+      const userId =
+        authorInfo.uid || media?.authorUserId || authorInfo.secUid || "unknown";
+      const nickname = authorInfo.nickname || "unknown";
+      const user_dir = normalizeFilename(`${userId}_${nickname}`);
+      const mediaType = isVideo ? "video" : isImage ? "image" : "other";
+      const defaultDir = isVideo
+        ? `./douyin/${user_dir}/videos`
+        : isImage
+        ? `./douyin/${user_dir}/images`
+        : `./douyin/${user_dir}/others`;
+      const dirContext = {
+        media,
+        filename,
+        filename_base: input_filename,
+        user_dir,
+        author_info: authorInfo,
+        uid: userId,
+        nickname,
+        aweme_id: media?.awemeId || "",
+        desc: media?.desc || "",
+      };
+      const resolvedDir = this._resolve_dir_template(
+        dir_config?.[mediaType],
+        dirContext,
+        defaultDir
       );
-      // TODO: 下载文件夹位置暂时不支持配置
+
       switch (dl_name) {
         case "abdm": {
-          return this.launchABDM(
-            url,
-            filename,
-            {},
-            {
-              dir: isVideo
-                ? `./douyin/${user_dir}/videos`
-                : isImage
-                ? `./douyin/${user_dir}/images`
-                : `./douyin/${user_dir}/others`,
-            }
-          );
+          return this.launchABDM(url, filename, {}, { dir: resolvedDir });
         }
         case "aria2": {
-          return this.launchAria2(
-            url,
-            filename,
-            {},
-            {
-              dir: isVideo
-                ? `./douyin/${user_dir}/videos`
-                : isImage
-                ? `./douyin/${user_dir}/images`
-                : `./douyin/${user_dir}/others`,
-            }
-          );
+          return this.launchAria2(url, filename, {}, { dir: resolvedDir });
         }
         default: {
           throw new Error(`Unknown download name: ${dl_name}`);
@@ -2769,6 +2900,9 @@ const requires = this;
       this.download_current_media = this._lock_download(
         this._download_current_media_logic.bind(this)
       );
+      this.download_media_list = this._lock_download(
+        this._download_media_list_logic.bind(this)
+      );
     }
 
     /**
@@ -2926,6 +3060,10 @@ const requires = this;
           releaseLock();
         }
       };
+    }
+
+    _format_toast_message(prefix, message) {
+      return prefix ? `${prefix} ${message}` : message;
     }
 
     /**
@@ -3125,29 +3263,40 @@ const requires = this;
      *
      * 如果是图集形式，必须从 images 这个数组里面取字段，其他字段都有可能是 fallback 值
      */
-    async _download_current_media_logic() {
-      if (!this.current_media) {
-        alert("[dy-dl]无当前媒体信息，请尝试播放视频或等待加载。");
-        return;
+    async _download_media_logic(media, options = {}) {
+      const {
+        toastTarget = document.querySelector(".dy-dl-video-btn"),
+        toast = null,
+        toastPrefix = "",
+        alertOnFail = true,
+        addHistory = true,
+      } = options;
+      if (!media) {
+        if (alertOnFail) {
+          alert("[dy-dl]无当前媒体信息，请尝试播放视频或等待加载。");
+        }
+        return { ok: false, reason: "missing_media" };
       }
-      const { video, images } = this.current_media;
-      const filename_base = this._build_filename(this.current_media);
+      const { video, images } = media;
+      const filename_base = this._build_filename(media);
 
       // 判断是否为图集
       const isAlbum = Array.isArray(images) && images.length > 0;
       const total = isAlbum ? images.length : 1;
 
-      const toast = createToast(
-        document.querySelector(".dy-dl-video-btn"),
-        5 * 1000
-      );
+      const scopedToast = toast || createToast(toastTarget, 5 * 1000);
+      const toastUpdate = (message, duration = 5 * 1000) =>
+        scopedToast.update(
+          this._format_toast_message(toastPrefix, message),
+          duration
+        );
 
       if (isAlbum) {
         // 下载图集
         // TODO 要是能支持 zip 打包会更好一点
         let downloadedCount = 0;
         for (let idx = 0; idx < images.length; idx++) {
-          toast.update(`下载图集 (${idx + 1}/${total})`);
+          toastUpdate(`下载图集 (${idx + 1}/${total})`);
 
           const imageItem = images[idx];
           const item_filename = `${filename_base}_${idx + 1}`; // 1-based index for files
@@ -3157,12 +3306,13 @@ const requires = this;
             // 包含视频的图集项
             const video_urls = this._get_video_urls(image_video);
             if (video_urls.length > 0) {
-              await this.downloader.download_file(
+              const ok = await this.downloader.download_file(
                 video_urls[0],
                 item_filename,
-                video_urls
+                video_urls,
+                { silent: !alertOnFail, media }
               );
-              downloadedCount++;
+              if (ok) downloadedCount++;
             } else {
               console.warn("[dy-dl]图集内视频无有效URL，跳过下载", image_video);
             }
@@ -3175,40 +3325,105 @@ const requires = this;
             imageItem?.urlList?.filter(Boolean) ||
             imageItem?.downloadUrlList.filter(Boolean);
           if (img_urls && img_urls.length > 0) {
-            await this.downloader.download_file(
+            const ok = await this.downloader.download_file(
               img_urls[0],
               item_filename,
-              img_urls
+              img_urls,
+              { silent: !alertOnFail, media }
             );
-            downloadedCount++;
+            if (ok) downloadedCount++;
           } else {
             console.warn("[dy-dl]图集内图片无有效URL，跳过下载", imageItem);
           }
         }
-        toast.update(`图集下载完成`);
+        toastUpdate(`图集下载完成`);
         if (downloadedCount === 0 && images.length > 0) {
-          alert("[dy-dl]图集下载失败，未找到有效媒体链接。");
+          if (alertOnFail) {
+            alert("[dy-dl]图集下载失败，未找到有效媒体链接。");
+          }
+          return { ok: false, reason: "album_no_valid_media" };
         }
         if (downloadedCount) {
-          DownloadHistory.add(this.current_media);
+          if (addHistory) {
+            DownloadHistory.add(media);
+          }
         }
-        return;
+        return { ok: downloadedCount > 0, downloadedCount };
       } else {
-        toast.update("正在下载...");
+        toastUpdate("正在下载...");
         // 单视频或单图片（老版本可能直接在video字段放图片信息，但新版通常是images）
         const video_urls = this._get_video_urls(video);
         if (video_urls.length !== 0) {
-          await this.downloader.download_file(
+          const ok = await this.downloader.download_file(
             video_urls[0],
             filename_base,
-            video_urls
+            video_urls,
+            { silent: !alertOnFail, media }
           );
-          DownloadHistory.add(this.current_media);
-          toast.update("下载完成");
-          return;
+          if (ok && addHistory) {
+            DownloadHistory.add(media);
+          }
+          if (ok) {
+            toastUpdate("下载完成");
+            return { ok: true };
+          }
         }
       }
-      alert("[dy-dl]无法下载当前媒体，尝试刷新、暂停、播放等操作后重试。");
+      if (alertOnFail) {
+        alert("[dy-dl]无法下载当前媒体，尝试刷新、暂停、播放等操作后重试。");
+      }
+      return { ok: false, reason: "no_valid_media" };
+    }
+
+    async _download_current_media_logic() {
+      return this._download_media_logic(this.current_media, {
+        toastTarget: document.querySelector(".dy-dl-video-btn"),
+        alertOnFail: true,
+        addHistory: true,
+      });
+    }
+
+    async _download_media_list_logic(media_list, toast_target = null) {
+      const deduped = [];
+      const seen = new Set();
+      (media_list || []).forEach((media) => {
+        if (!media?.awemeId || seen.has(media.awemeId)) return;
+        seen.add(media.awemeId);
+        deduped.push(media);
+      });
+
+      if (deduped.length === 0) {
+        alert("[dy-dl]未选择任何作品。");
+        return;
+      }
+
+      const toast = createToast(toast_target, 8 * 1000);
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (let idx = 0; idx < deduped.length; idx++) {
+        const media = deduped[idx];
+        const result = await this._download_media_logic(media, {
+          toastTarget: toast_target,
+          toast,
+          toastPrefix: `批量下载 (${idx + 1}/${deduped.length})`,
+          alertOnFail: false,
+          addHistory: true,
+        });
+        if (result?.ok) {
+          successCount++;
+        } else {
+          failedCount++;
+          console.warn("[dy-dl]批量下载单项失败", media);
+        }
+      }
+
+      toast.update(`批量下载完成 (${successCount}/${deduped.length})`, 5 * 1000);
+      if (failedCount > 0) {
+        alert(
+          `[dy-dl]批量下载完成，成功 ${successCount} 个，失败 ${failedCount} 个。`
+        );
+      }
     }
 
     // 下载封面
@@ -3221,7 +3436,9 @@ const requires = this;
       // 第一个是压缩的，所以用第二个
       const thumb = video.originCoverUrlList[1] || video.originCoverUrlList[0];
       const filename_base = this._build_filename(this.current_media);
-      this.downloader.download_file(thumb, `thumb_${filename_base}`);
+      this.downloader.download_file(thumb, `thumb_${filename_base}`, [], {
+        media: this.current_media,
+      });
     }
 
     // 显示媒体详情
@@ -3368,6 +3585,8 @@ const requires = this;
 
   // #region DOM Patcher
   class DOMPatcher {
+    static FEED_CARD_SELECTOR =
+      '.waterfall-videoCardContainer[href], [href*="/video/"][target="_blank"], [href*="/note/"][target="_blank"]';
     /** @type {Downloader} */
     downloader;
     /** @type {MediaHandler} */
@@ -3390,6 +3609,19 @@ const requires = this;
       this.videoHandler = videoHandler;
       this.danmakuHandler = danmakuHandler;
       this.observer = new MutationObserver(this._handleMutations.bind(this));
+      this.feedMediaCache = new Map();
+      this.selectedFeedMedia = new Map();
+      this.feedBatchToolbar = null;
+      this.feedBatchCount = null;
+      this.feedBatchDownloadButton = null;
+      this.profileAutoToolbar = null;
+      this.profileAutoStatus = null;
+      this.profileAutoActionButton = null;
+      this.profileAutoStopButton = null;
+      this.profileAutoResetButton = null;
+      this.profileJobRunning = false;
+      this.profileJobStopRequested = false;
+      this.profileJobState = null;
     }
 
     /**
@@ -3420,6 +3652,723 @@ const requires = this;
       return /** @type {HTMLElement} */ (div.children[0]);
     }
 
+    static findReactFiber(node) {
+      let current = node;
+      while (current instanceof HTMLElement) {
+        const fiberKey = Object.keys(current).find((key) =>
+          key.startsWith("__reactFiber$")
+        );
+        if (fiberKey) {
+          return current[fiberKey];
+        }
+        current = current.parentElement;
+      }
+      return null;
+    }
+
+    static getAwemeIdFromHref(href = "") {
+      const match = href.match(/\/(?:video|note)\/(\d+)/);
+      return match?.[1] || "";
+    }
+
+    _extract_feed_media(card) {
+      let fiber = DOMPatcher.findReactFiber(card);
+      while (fiber) {
+        const props = fiber.memoizedProps;
+        const candidate =
+          props?.awemeInfo ||
+          props?.itemInfo?.awemeInfo ||
+          (props?.itemInfo?.awemeId ? props.itemInfo : null);
+        if (candidate?.awemeId) {
+          this.feedMediaCache.set(candidate.awemeId, candidate);
+          return candidate;
+        }
+        fiber = fiber.return;
+      }
+
+      const awemeId = DOMPatcher.getAwemeIdFromHref(card.getAttribute("href"));
+      return awemeId ? this.feedMediaCache.get(awemeId) || null : null;
+    }
+
+    _is_profile_page() {
+      return location.pathname.startsWith("/user/");
+    }
+
+    _get_profile_context() {
+      if (!this._is_profile_page()) return null;
+
+      const pathSecUid = location.pathname.replace(/^\/user\//, "").trim();
+      const scannedMedia = this._collect_current_feed_media().find(
+        (media) => media?.authorInfo?.secUid
+      );
+      const secUid =
+        pathSecUid && pathSecUid !== "self"
+          ? pathSecUid
+          : scannedMedia?.authorInfo?.secUid || pathSecUid || "";
+      const titleName = document.title.split("的抖音")[0]?.trim() || "";
+      const profileName = scannedMedia?.authorInfo?.nickname || titleName;
+      const activeTab =
+        new URLSearchParams(location.search).get("showTab") ||
+        "post";
+      const profileKey = `${secUid || pathSecUid || "self"}:${activeTab}`;
+
+      return {
+        secUid,
+        profileName,
+        tabKey: activeTab,
+        profileKey,
+      };
+    }
+
+    _load_profile_job_state() {
+      const profile = this._get_profile_context();
+      if (!profile) return null;
+      const state = ProfileDownloadState.load(profile.profileKey, profile);
+      this.profileJobState = state;
+      return state;
+    }
+
+    _save_profile_job_state(state) {
+      if (!state?.profileKey) return state;
+      const saved = ProfileDownloadState.save(state.profileKey, state);
+      this.profileJobState = saved;
+      return saved;
+    }
+
+    _collect_current_feed_media() {
+      const medias = [];
+      const seen = new Set();
+      document.querySelectorAll(DOMPatcher.FEED_CARD_SELECTOR).forEach((card) => {
+        const media = this._extract_feed_media(/** @type {HTMLElement} */ (card));
+        if (!media?.awemeId || seen.has(media.awemeId)) return;
+        seen.add(media.awemeId);
+        this.feedMediaCache.set(media.awemeId, media);
+        medias.push(media);
+      });
+      return medias;
+    }
+
+    _merge_profile_media_into_state(state, mediaList) {
+      const knownIds = new Set(state.knownIds || []);
+      (mediaList || []).forEach((media) => {
+        if (!media?.awemeId) return;
+        knownIds.add(media.awemeId);
+      });
+      state.knownIds = Array.from(knownIds);
+      return state;
+    }
+
+    _mark_profile_item_downloaded(state, media) {
+      if (!media?.awemeId) return state;
+      const downloadedIds = new Set(state.downloadedIds || []);
+      downloadedIds.add(media.awemeId);
+      state.downloadedIds = Array.from(downloadedIds);
+      if (state.failedItems?.[media.awemeId]) {
+        delete state.failedItems[media.awemeId];
+      }
+      return state;
+    }
+
+    _mark_profile_item_failed(state, media, reason = "unknown") {
+      if (!media?.awemeId) return state;
+      const prev = state.failedItems?.[media.awemeId] || {};
+      state.failedItems = state.failedItems || {};
+      state.failedItems[media.awemeId] = {
+        count: Number(prev.count || 0) + 1,
+        reason,
+        updatedAt: Date.now(),
+        desc: media.desc || prev.desc || "",
+      };
+      return state;
+    }
+
+    _get_profile_download_counts(state) {
+      return {
+        known: state?.knownIds?.length || 0,
+        downloaded: state?.downloadedIds?.length || 0,
+        failed: Object.keys(state?.failedItems || {}).length,
+      };
+    }
+
+    _find_profile_scroll_container() {
+      const firstCard = document.querySelector(DOMPatcher.FEED_CARD_SELECTOR);
+      let current =
+        firstCard instanceof HTMLElement ? firstCard.parentElement : null;
+      while (current instanceof HTMLElement) {
+        const style = window.getComputedStyle(current);
+        const isScrollable =
+          ["auto", "scroll", "overlay"].includes(style.overflowY) &&
+          current.scrollHeight > current.clientHeight + 100;
+        if (isScrollable) {
+          return current;
+        }
+        current = current.parentElement;
+      }
+
+      return (
+        document.querySelector(".route-scroll-container") ||
+        document.querySelector(".parent-route-container") ||
+        document.scrollingElement ||
+        document.documentElement
+      );
+    }
+
+    async _scroll_profile_page_once() {
+      const container = this._find_profile_scroll_container();
+      if (!container) return false;
+
+      const isDocumentScroll =
+        container === document.body ||
+        container === document.documentElement ||
+        container === document.scrollingElement;
+
+      const beforeTop = isDocumentScroll
+        ? window.scrollY
+        : container.scrollTop;
+      const clientHeight = isDocumentScroll
+        ? window.innerHeight
+        : container.clientHeight;
+      const scrollHeight = container.scrollHeight;
+      const maxTop = Math.max(0, scrollHeight - clientHeight);
+      const nextTop = Math.min(beforeTop + Math.max(clientHeight * 0.85, 480), maxTop);
+
+      if (nextTop <= beforeTop + 4) {
+        return false;
+      }
+
+      if (isDocumentScroll) {
+        window.scrollTo({ top: nextTop, behavior: "smooth" });
+      } else {
+        container.scrollTo({ top: nextTop, behavior: "smooth" });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return true;
+    }
+
+    _ensure_profile_auto_toolbar() {
+      if (!this._is_profile_page()) {
+        if (this.profileAutoToolbar?.isConnected) {
+          this.profileAutoToolbar.remove();
+        }
+        this.profileAutoToolbar = null;
+        return null;
+      }
+
+      if (this.profileAutoToolbar?.isConnected) {
+        return this.profileAutoToolbar;
+      }
+
+      const toolbar = document.createElement("div");
+      Object.assign(toolbar.style, {
+        position: "fixed",
+        right: "24px",
+        bottom: "90px",
+        zIndex: "999999",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "10px 12px",
+        borderRadius: "14px",
+        background: "rgba(18, 18, 20, 0.92)",
+        color: "#fff",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.22)",
+        backdropFilter: "blur(10px)",
+        fontSize: "13px",
+        fontFamily: "sans-serif",
+      });
+
+      const status = document.createElement("span");
+      status.style.minWidth = "180px";
+      status.textContent = "作者全量下载";
+
+      const buildButton = (label, bg = "rgba(255,255,255,0.12)") => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        Object.assign(button.style, {
+          border: "none",
+          borderRadius: "10px",
+          padding: "7px 10px",
+          cursor: "pointer",
+          background: bg,
+          color: "#fff",
+          fontSize: "12px",
+        });
+        return button;
+      };
+
+      const actionButton = buildButton("开始全量", "#0f8f5f");
+      const stopButton = buildButton("停止", "rgba(255,255,255,0.12)");
+      const resetButton = buildButton("重置记录");
+      const settingsButton = buildButton("设置");
+
+      actionButton.addEventListener("click", () => {
+        this.start_profile_download_job();
+      });
+      stopButton.addEventListener("click", () => {
+        this.stop_profile_download_job();
+      });
+      resetButton.addEventListener("click", () => {
+        this.reset_profile_download_job_state();
+      });
+      settingsButton.addEventListener("click", () => {
+        this.mediaHandler.open_config_modal();
+      });
+
+      toolbar.append(
+        status,
+        actionButton,
+        stopButton,
+        resetButton,
+        settingsButton
+      );
+      document.body.appendChild(toolbar);
+
+      this.profileAutoToolbar = toolbar;
+      this.profileAutoStatus = status;
+      this.profileAutoActionButton = actionButton;
+      this.profileAutoStopButton = stopButton;
+      this.profileAutoResetButton = resetButton;
+      this.profileAutoSettingsButton = settingsButton;
+      return toolbar;
+    }
+
+    _sync_profile_auto_toolbar(state = null) {
+      const toolbar = this._ensure_profile_auto_toolbar();
+      if (!toolbar) return;
+
+      const nextState = state || this._load_profile_job_state();
+      const counts = this._get_profile_download_counts(nextState);
+      const profileName = nextState?.profileName || "当前主页";
+      const statusLabel = this.profileJobRunning
+        ? "进行中"
+        : nextState?.status === "completed"
+        ? "已完成"
+        : nextState?.status === "paused"
+        ? "已暂停"
+        : "待开始";
+
+      if (this.profileAutoStatus) {
+        this.profileAutoStatus.textContent = `${profileName}: ${statusLabel} ${counts.downloaded}/${counts.known || "?"}，失败 ${counts.failed}`;
+      }
+      if (this.profileAutoActionButton) {
+        this.profileAutoActionButton.textContent =
+          counts.downloaded > 0 || counts.failed > 0 ? "继续/补漏" : "开始全量";
+        this.profileAutoActionButton.disabled = this.profileJobRunning;
+        this.profileAutoActionButton.style.opacity = this.profileJobRunning
+          ? "0.6"
+          : "1";
+      }
+      if (this.profileAutoStopButton) {
+        this.profileAutoStopButton.disabled = !this.profileJobRunning;
+        this.profileAutoStopButton.style.opacity = this.profileJobRunning
+          ? "1"
+          : "0.6";
+      }
+    }
+
+    stop_profile_download_job() {
+      this.profileJobStopRequested = true;
+      if (this.profileJobState?.profileKey) {
+        this.profileJobState.status = "paused";
+        this._save_profile_job_state(this.profileJobState);
+      }
+      this._sync_profile_auto_toolbar();
+    }
+
+    reset_profile_download_job_state() {
+      const profile = this._get_profile_context();
+      if (!profile) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+      if (!confirm("确定清空当前作者主页的下载记录吗？")) {
+        return;
+      }
+      if (this.profileJobRunning) {
+        this.stop_profile_download_job();
+      }
+      ProfileDownloadState.reset(profile.profileKey);
+      this.profileJobState = ProfileDownloadState.create_default(profile);
+      this._sync_profile_auto_toolbar(this.profileJobState);
+    }
+
+    async start_profile_download_job() {
+      if (!this._is_profile_page()) {
+        alert("[dy-dl]请在作者主页中使用全量下载。");
+        return;
+      }
+      if (this.profileJobRunning) {
+        return;
+      }
+      if (this.mediaHandler.downloading) {
+        alert("[dy-dl]当前已有下载任务在进行中，请稍后再试。");
+        return;
+      }
+
+      const releaseLock = this.mediaHandler._flag_start_download();
+      this.profileJobRunning = true;
+      this.profileJobStopRequested = false;
+      try {
+        await this._run_profile_download_job_logic();
+      } finally {
+        this.profileJobRunning = false;
+        this.profileJobStopRequested = false;
+        releaseLock();
+        this._sync_profile_auto_toolbar();
+      }
+    }
+
+    async _run_profile_download_job_logic() {
+      const profile = this._get_profile_context();
+      if (!profile) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+
+      let state = this._load_profile_job_state();
+      state.status = "running";
+      state.lastRunAt = Date.now();
+      state.completedAt = 0;
+      state = this._save_profile_job_state(state);
+      this._sync_profile_auto_toolbar(state);
+
+      const toast = createToast(
+        this.profileAutoActionButton || this.profileAutoToolbar,
+        0
+      );
+
+      let idleRounds = 0;
+      while (!this.profileJobStopRequested) {
+        const mediaList = this._collect_current_feed_media();
+        state = this._merge_profile_media_into_state(state, mediaList);
+        state = this._save_profile_job_state(state);
+        this._sync_profile_auto_toolbar(state);
+
+        const downloadedSet = new Set(state.downloadedIds || []);
+        const pendingMedia = mediaList.filter(
+          (media) => media?.awemeId && !downloadedSet.has(media.awemeId)
+        );
+
+        if (pendingMedia.length > 0) {
+          idleRounds = 0;
+          for (let idx = 0; idx < pendingMedia.length; idx++) {
+            if (this.profileJobStopRequested) break;
+            const media = pendingMedia[idx];
+            const counts = this._get_profile_download_counts(state);
+            toast.update(
+              `作者全量 (${counts.downloaded + 1}/${counts.known || "?"}) ${
+                media.desc || media.awemeId
+              }`
+            );
+            const result = await this.mediaHandler._download_media_logic(media, {
+              toastTarget: this.profileAutoActionButton || this.profileAutoToolbar,
+              toast,
+              toastPrefix: "作者全量",
+              alertOnFail: false,
+              addHistory: true,
+            });
+
+            if (result?.ok) {
+              state = this._mark_profile_item_downloaded(state, media);
+            } else {
+              state = this._mark_profile_item_failed(
+                state,
+                media,
+                result?.reason || "download_failed"
+              );
+            }
+            state = this._save_profile_job_state(state);
+            this._sync_profile_auto_toolbar(state);
+          }
+          continue;
+        }
+
+        toast.update(
+          `作者全量：已扫到 ${state.knownIds.length} 个，继续向下检查...`
+        );
+        const beforeKnown = state.knownIds.length;
+        const didScroll = await this._scroll_profile_page_once();
+        const afterMedia = this._collect_current_feed_media();
+        state = this._merge_profile_media_into_state(state, afterMedia);
+        state = this._save_profile_job_state(state);
+        this._sync_profile_auto_toolbar(state);
+
+        const foundNewMedia = state.knownIds.length > beforeKnown;
+        if (!didScroll && !foundNewMedia) {
+          idleRounds++;
+        } else if (!foundNewMedia) {
+          idleRounds++;
+        } else {
+          idleRounds = 0;
+        }
+
+        if (idleRounds >= 3) {
+          break;
+        }
+      }
+
+      if (this.profileJobStopRequested) {
+        state.status = "paused";
+        state = this._save_profile_job_state(state);
+        toast.update("作者全量下载已暂停", 3000);
+      } else {
+        state.status = "completed";
+        state.completedAt = Date.now();
+        state = this._save_profile_job_state(state);
+        const counts = this._get_profile_download_counts(state);
+        toast.update(
+          `作者全量完成：已下载 ${counts.downloaded} 个，失败 ${counts.failed} 个`,
+          5000
+        );
+        if (counts.failed > 0) {
+          alert(
+            `[dy-dl]作者主页全量下载完成，成功 ${counts.downloaded} 个，失败 ${counts.failed} 个。下次点击“继续/补漏”会跳过已下载作品。`
+          );
+        }
+      }
+    }
+
+    _ensure_feed_batch_toolbar() {
+      if (this.feedBatchToolbar?.isConnected) {
+        return this.feedBatchToolbar;
+      }
+
+      const toolbar = document.createElement("div");
+      Object.assign(toolbar.style, {
+        position: "fixed",
+        right: "24px",
+        bottom: "24px",
+        zIndex: "999999",
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "10px 12px",
+        borderRadius: "14px",
+        background: "rgba(18, 18, 20, 0.92)",
+        color: "#fff",
+        boxShadow: "0 10px 30px rgba(0,0,0,0.22)",
+        backdropFilter: "blur(10px)",
+        fontSize: "13px",
+        fontFamily: "sans-serif",
+      });
+
+      const count = document.createElement("span");
+      count.textContent = "未选作品";
+      count.style.minWidth = "92px";
+
+      const buildButton = (label) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        Object.assign(button.style, {
+          border: "none",
+          borderRadius: "10px",
+          padding: "7px 10px",
+          cursor: "pointer",
+          background: "rgba(255,255,255,0.12)",
+          color: "#fff",
+          fontSize: "12px",
+        });
+        return button;
+      };
+
+      const selectVisibleButton = buildButton("全选可见");
+      const clearButton = buildButton("清空");
+      const downloadButton = buildButton("下载选中");
+      downloadButton.style.background = "#fe2c55";
+
+      selectVisibleButton.addEventListener("click", () => {
+        this._select_visible_feed_cards();
+      });
+      clearButton.addEventListener("click", () => {
+        this._clear_feed_selection();
+      });
+      downloadButton.addEventListener("click", () => {
+        this.mediaHandler.download_media_list(
+          Array.from(this.selectedFeedMedia.values()),
+          downloadButton
+        );
+      });
+
+      toolbar.append(count, selectVisibleButton, clearButton, downloadButton);
+      document.body.appendChild(toolbar);
+
+      this.feedBatchToolbar = toolbar;
+      this.feedBatchCount = count;
+      this.feedBatchDownloadButton = downloadButton;
+      return toolbar;
+    }
+
+    _sync_feed_batch_toolbar() {
+      const toolbar = this._ensure_feed_batch_toolbar();
+      const enhancedCards = document.querySelectorAll("[data-dy-dl-feed-card]");
+      toolbar.style.display =
+        enhancedCards.length > 0 || this.selectedFeedMedia.size > 0
+          ? "flex"
+          : "none";
+
+      if (!this.feedBatchCount) return;
+
+      if (this.selectedFeedMedia.size === 0) {
+        this.feedBatchCount.textContent = `未选作品 (${enhancedCards.length})`;
+      } else {
+        this.feedBatchCount.textContent = `已选 ${this.selectedFeedMedia.size} 个`;
+      }
+    }
+
+    _set_feed_card_selected(card, selected) {
+      const badge = card.querySelector(".dy-dl-feed-select");
+      const checkbox = card.querySelector(".dy-dl-feed-checkbox");
+      if (!(badge instanceof HTMLElement) || !(checkbox instanceof HTMLInputElement)) {
+        return;
+      }
+      checkbox.checked = selected;
+      badge.style.background = selected ? "#fe2c55" : "rgba(0,0,0,0.55)";
+      badge.style.borderColor = selected ? "#fe2c55" : "rgba(255,255,255,0.25)";
+      badge.style.color = "#fff";
+      const label = badge.querySelector(".dy-dl-feed-select-label");
+      if (label) {
+        label.textContent = selected ? "已选" : "选择";
+      }
+    }
+
+    _toggle_feed_selection(media, selected) {
+      if (!media?.awemeId) return;
+      if (selected) {
+        this.selectedFeedMedia.set(media.awemeId, media);
+      } else {
+        this.selectedFeedMedia.delete(media.awemeId);
+      }
+      document
+        .querySelectorAll(`[data-dy-dl-aweme-id="${media.awemeId}"]`)
+        .forEach((card) =>
+          this._set_feed_card_selected(/** @type {HTMLElement} */ (card), selected)
+        );
+      this._sync_feed_batch_toolbar();
+    }
+
+    _clear_feed_selection() {
+      this.selectedFeedMedia.clear();
+      document.querySelectorAll("[data-dy-dl-feed-card]").forEach((card) => {
+        this._set_feed_card_selected(/** @type {HTMLElement} */ (card), false);
+      });
+      this._sync_feed_batch_toolbar();
+    }
+
+    _select_visible_feed_cards() {
+      document.querySelectorAll("[data-dy-dl-feed-card]").forEach((card) => {
+        const rect = card.getBoundingClientRect();
+        const isVisible =
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.bottom > 0 &&
+          rect.right > 0 &&
+          rect.top < window.innerHeight &&
+          rect.left < window.innerWidth;
+        if (!isVisible) return;
+        const awemeId = card.getAttribute("data-dy-dl-aweme-id");
+        const media = awemeId ? this.feedMediaCache.get(awemeId) : null;
+        if (media) {
+          this._toggle_feed_selection(media, true);
+        }
+      });
+    }
+
+    _decorate_feed_card(card) {
+      if (!(card instanceof HTMLElement)) return;
+      if (card.dataset.dyDlFeedCard === "1") {
+        const awemeId = card.getAttribute("data-dy-dl-aweme-id");
+        if (awemeId && this.selectedFeedMedia.has(awemeId)) {
+          this._set_feed_card_selected(card, true);
+        }
+        this._sync_feed_batch_toolbar();
+        return;
+      }
+
+      const media = this._extract_feed_media(card);
+      if (!media?.awemeId) {
+        const retryCount = Number(card.dataset.dyDlFeedRetry || 0);
+        if (retryCount < 3) {
+          card.dataset.dyDlFeedRetry = String(retryCount + 1);
+          setTimeout(() => this._decorate_feed_card(card), 300 * (retryCount + 1));
+        }
+        return;
+      }
+
+      card.dataset.dyDlFeedCard = "1";
+      card.dataset.dyDlAwemeId = media.awemeId;
+      this.feedMediaCache.set(media.awemeId, media);
+
+      const computedPosition = window.getComputedStyle(card).position;
+      if (!computedPosition || computedPosition === "static") {
+        card.style.position = "relative";
+      }
+
+      const badge = document.createElement("label");
+      badge.className = "dy-dl-feed-select";
+      Object.assign(badge.style, {
+        position: "absolute",
+        top: "10px",
+        left: "10px",
+        zIndex: "5",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "6px",
+        padding: "6px 10px",
+        borderRadius: "999px",
+        background: "rgba(0,0,0,0.55)",
+        border: "1px solid rgba(255,255,255,0.25)",
+        color: "#fff",
+        fontSize: "12px",
+        fontFamily: "sans-serif",
+        cursor: "pointer",
+        userSelect: "none",
+      });
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "dy-dl-feed-checkbox";
+      checkbox.style.margin = "0";
+      checkbox.style.cursor = "pointer";
+
+      const label = document.createElement("span");
+      label.className = "dy-dl-feed-select-label";
+      label.textContent = "选择";
+
+      const stopCardJump = (event) => {
+        event.stopPropagation();
+      };
+
+      ["click", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
+        badge.addEventListener(eventName, stopCardJump);
+      });
+
+      checkbox.addEventListener("change", (event) => {
+        event.stopPropagation();
+        this._toggle_feed_selection(media, checkbox.checked);
+      });
+
+      badge.append(checkbox, label);
+      card.appendChild(badge);
+      this._set_feed_card_selected(card, this.selectedFeedMedia.has(media.awemeId));
+      this._sync_feed_batch_toolbar();
+    }
+
+    _handle_feed_cards_in_node(node) {
+      if (!(node instanceof HTMLElement)) return;
+      if (node.matches?.(DOMPatcher.FEED_CARD_SELECTOR)) {
+        this._decorate_feed_card(node);
+      }
+      node
+        .querySelectorAll?.(DOMPatcher.FEED_CARD_SELECTOR)
+        .forEach((card) =>
+          this._decorate_feed_card(/** @type {HTMLElement} */ (card))
+        );
+      this._sync_feed_batch_toolbar();
+      this._sync_profile_auto_toolbar();
+    }
+
     /**
      * @param {MutationRecord[]} mutations
      */
@@ -3430,6 +4379,7 @@ const requires = this;
             return;
           }
           const elementNode = /** @type {HTMLElement} */ (node);
+          this._handle_feed_cards_in_node(elementNode);
 
           // Tooltip for emoticons
           if (elementNode.classList.contains("semi-portal")) {
@@ -3645,6 +4595,13 @@ const requires = this;
         .forEach((controls) =>
           this._handleXgControl(/** @type {HTMLElement} */ (controls))
         );
+      document
+        .querySelectorAll(DOMPatcher.FEED_CARD_SELECTOR)
+        .forEach((card) =>
+          this._decorate_feed_card(/** @type {HTMLElement} */ (card))
+        );
+      this._sync_feed_batch_toolbar();
+      this._sync_profile_auto_toolbar();
     }
   }
   // #endregion
