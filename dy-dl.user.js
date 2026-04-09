@@ -60,6 +60,9 @@ const requires = this;
     return format.replace(/YYYY|MM|DD|HH|mm|ss/g, (m) => o[m]);
   };
 
+  const isProfilePagePath = (pathname = location.pathname) =>
+    pathname.startsWith("/user/");
+
   /**
    * 创建可定位的 Toast
    * @param {HTMLElement|string} [target] - 目标元素或选择器，用于将 Toast 定位在其正上方；若未提供则显示在右下角
@@ -207,6 +210,7 @@ const requires = this;
       filename_template: "`${nickname}_${short_id}_${tags}_${desc}`",
     };
     static global = new Config();
+    static listeners = new Set();
 
     features = {
       /**
@@ -307,6 +311,10 @@ const requires = this;
           token: "",
         },
       },
+      /**
+       * 是否显示作者主页下载悬浮面板
+       */
+      show_profile_panel: true,
     };
 
     _key = "__douyin-dl-user-js__";
@@ -337,10 +345,30 @@ const requires = this;
 
     save() {
       localStorage.setItem(this._key, JSON.stringify(this.toJSON()));
+      Config._emit();
     }
 
     clone_features() {
       return JSON.parse(JSON.stringify(this.features));
+    }
+
+    static subscribe(listener) {
+      this.listeners.add(listener);
+      listener(this.global.clone_features());
+      return () => {
+        this.listeners.delete(listener);
+      };
+    }
+
+    static _emit() {
+      const snapshot = this.global.clone_features();
+      this.listeners.forEach((listener) => {
+        try {
+          listener(snapshot);
+        } catch (error) {
+          console.error("[dy-dl]配置订阅失败", error);
+        }
+      });
     }
   }
   // #endregion
@@ -386,6 +414,86 @@ const requires = this;
     }
   }
   // #endregion
+
+  class ProfileDownloadState {
+    static STORAGE_PREFIX = "__douyin-dl-profile-state__:";
+
+    static _storage_key(profileKey) {
+      return `${this.STORAGE_PREFIX}${profileKey}`;
+    }
+
+    static create_default(profile = {}) {
+      return {
+        version: 1,
+        profileKey: profile.profileKey || "",
+        secUid: profile.secUid || "",
+        profileName: profile.profileName || "",
+        tabKey: profile.tabKey || "post",
+        status: "idle",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        lastRunAt: 0,
+        completedAt: 0,
+        knownIds: [],
+        downloadedIds: [],
+        failedItems: {},
+      };
+    }
+
+    static load(profileKey, profile = {}) {
+      try {
+        const raw = localStorage.getItem(this._storage_key(profileKey));
+        if (!raw) {
+          return this.create_default({
+            ...profile,
+            profileKey,
+          });
+        }
+        const parsed = JSON.parse(raw);
+        return {
+          ...this.create_default({
+            ...profile,
+            profileKey,
+          }),
+          ...parsed,
+          profileKey,
+          secUid: profile.secUid || parsed.secUid || "",
+          profileName: profile.profileName || parsed.profileName || "",
+          tabKey: profile.tabKey || parsed.tabKey || "post",
+          knownIds: Array.isArray(parsed.knownIds) ? parsed.knownIds : [],
+          downloadedIds: Array.isArray(parsed.downloadedIds)
+            ? parsed.downloadedIds
+            : [],
+          failedItems:
+            parsed.failedItems && typeof parsed.failedItems === "object"
+              ? parsed.failedItems
+              : {},
+        };
+      } catch (error) {
+        console.error("[dy-dl]加载作者下载状态失败", error);
+        return this.create_default({
+          ...profile,
+          profileKey,
+        });
+      }
+    }
+
+    static save(profileKey, state) {
+      const nextState = {
+        ...state,
+        updatedAt: Date.now(),
+      };
+      localStorage.setItem(
+        this._storage_key(profileKey),
+        JSON.stringify(nextState)
+      );
+      return nextState;
+    }
+
+    static reset(profileKey) {
+      localStorage.removeItem(this._storage_key(profileKey));
+    }
+  }
 
   // #region 图片转码压缩
   /**
@@ -993,7 +1101,7 @@ const requires = this;
      * @param {string} url
      * @param {string} filename_input
      */
-    async download_one_url(url, filename_input) {
+    async download_one_url(url, filename_input, options = {}) {
       const { using_downloader, downloader_config } = Config.global.features;
       switch (using_downloader) {
         case "browser":
@@ -1021,7 +1129,11 @@ const requires = this;
             .invoke_download(
               url,
               using_downloader,
-              downloader_config[using_downloader].dir
+              downloader_config[using_downloader].dir,
+              {
+                filename_input,
+                media: options.media,
+              }
             )
             .then((x) => ({ ok: x, error_msg: "" }));
         default: {
@@ -1034,7 +1146,13 @@ const requires = this;
     /**
      * 下载文件 根据所有url逐一尝试下载
      */
-    async download_file(source, filename_input = "", fallback_src = []) {
+    async download_file(
+      source,
+      filename_input = "",
+      fallback_src = [],
+      options = {}
+    ) {
+      const { silent = false } = options;
       let url_sources = [source, ...fallback_src].filter(
         (x) => typeof x === "string" && x.length > 0
       );
@@ -1045,21 +1163,25 @@ const requires = this;
       for (const url of url_sources.values()) {
         const { ok, error_msg: emsg } = await this.download_one_url(
           url,
-          filename_input
+          filename_input,
+          options
         );
         error_msg = error_msg || emsg;
         if (ok) {
-          return;
+          return true;
         }
       }
 
       // If all downloads failed, show an alert.
       // If the first attempt failed with a "Failed to fetch" style error, replicate original alert.
-      if (error_msg && url_sources.length === 1) {
-        alert(error_msg);
-      } else {
-        alert(`[dy-dl]所有尝试下载都失败，请刷新重试`);
+      if (!silent) {
+        if (error_msg && url_sources.length === 1) {
+          alert(error_msg);
+        } else {
+          alert(`[dy-dl]所有尝试下载都失败，请刷新重试`);
+        }
       }
+      return false;
     }
   }
   // #endregion
@@ -1168,45 +1290,82 @@ const requires = this;
      * @param {"idm" | "aria2" | "bc" | "abdm"} dl_name 下载器名称
      * @param {void | null | {video: string, image: string, other: string}} dir_config 下载文件夹配置
      */
-    async invoke_download(url, dl_name = "abdm", dir_config) {
-      const input_filename = await mediaHandler._build_filename();
+    _resolve_dir_template(input, context, fallback = "") {
+      if (typeof input !== "string") return fallback;
+
+      const raw = input.trim();
+      if (!raw) return fallback;
+
+      if (!raw.includes("${") && !raw.startsWith("`")) {
+        return raw;
+      }
+
+      const templateCode = raw.startsWith("`")
+        ? raw
+        : `\`${raw.replace(/\\/g, "\\\\").replace(/`/g, "\\`")}\``;
+
+      try {
+        const resolved = runInContext(context, templateCode);
+        return typeof resolved === "string" && resolved.trim()
+          ? resolved
+          : fallback;
+      } catch (error) {
+        console.error("[dy-dl]解析下载目录模板失败", error);
+        return fallback;
+      }
+    }
+
+    /**
+     * 简化入口
+     * @param {string} url
+     * @param {"idm" | "aria2" | "bc" | "abdm"} dl_name 下载器名称
+     * @param {void | null | {video: string, image: string, other: string}} dir_config 下载文件夹配置
+     * @param {{filename_input?: string, media?: import("./types").DouyinMedia.MediaRoot | null}} [options]
+     */
+    async invoke_download(url, dl_name = "abdm", dir_config, options = {}) {
+      const media = options.media || mediaHandler.current_media;
+      const input_filename =
+        options.filename_input ||
+        (media ? mediaHandler._build_filename(media) : "download");
       const { filename, isVideo, isImage } =
         await mediaHandler.downloader.prepare_filename(
           url,
           normalizeFilename(input_filename)
         );
-      const user_dir = normalizeFilename(
-        `${mediaHandler.current_media.authorInfo.uid}_${mediaHandler.current_media.authorInfo.nickname}`
+      const authorInfo = media?.authorInfo || {};
+      const userId =
+        authorInfo.uid || media?.authorUserId || authorInfo.secUid || "unknown";
+      const nickname = authorInfo.nickname || "unknown";
+      const user_dir = normalizeFilename(`${userId}_${nickname}`);
+      const mediaType = isVideo ? "video" : isImage ? "image" : "other";
+      const defaultDir = isVideo
+        ? `./douyin/${user_dir}/videos`
+        : isImage
+        ? `./douyin/${user_dir}/images`
+        : `./douyin/${user_dir}/others`;
+      const dirContext = {
+        media,
+        filename,
+        filename_base: input_filename,
+        user_dir,
+        author_info: authorInfo,
+        uid: userId,
+        nickname,
+        aweme_id: media?.awemeId || "",
+        desc: media?.desc || "",
+      };
+      const resolvedDir = this._resolve_dir_template(
+        dir_config?.[mediaType],
+        dirContext,
+        defaultDir
       );
-      // TODO: 下载文件夹位置暂时不支持配置
+
       switch (dl_name) {
         case "abdm": {
-          return this.launchABDM(
-            url,
-            filename,
-            {},
-            {
-              dir: isVideo
-                ? `./douyin/${user_dir}/videos`
-                : isImage
-                ? `./douyin/${user_dir}/images`
-                : `./douyin/${user_dir}/others`,
-            }
-          );
+          return this.launchABDM(url, filename, {}, { dir: resolvedDir });
         }
         case "aria2": {
-          return this.launchAria2(
-            url,
-            filename,
-            {},
-            {
-              dir: isVideo
-                ? `./douyin/${user_dir}/videos`
-                : isImage
-                ? `./douyin/${user_dir}/images`
-                : `./douyin/${user_dir}/others`,
-            }
-          );
+          return this.launchAria2(url, filename, {}, { dir: resolvedDir });
         }
         default: {
           throw new Error(`Unknown download name: ${dl_name}`);
@@ -2239,6 +2398,9 @@ const requires = this;
       const [using_downloader, set_UsingDownloader] = useState(
         config.features.using_downloader || "browser"
       );
+      const [showProfilePanel, setShowProfilePanel] = useState(
+        config.features.show_profile_panel !== false
+      );
 
       // filename 实时刷新测试
       const filename_test = useMemo(() => {
@@ -2266,6 +2428,7 @@ const requires = this;
         config.features.image_resize_codecs = imageResize;
         config.features.image_quality = imageQuality;
         config.features.using_downloader = using_downloader;
+        config.features.show_profile_panel = showProfilePanel;
         config.save();
         alert("配置已保存");
       };
@@ -2293,6 +2456,21 @@ const requires = this;
             <div style="font-size: 12px; color: #666;">
               如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。
               <br />注意：使用外部下载器时，图片压缩转码功能不可用。
+            </div>
+          </fieldset>
+
+          <fieldset style=${styles.fieldset}>
+            <legend style=${styles.legend}>悬浮面板</legend>
+            <div style=${styles.row}>
+              <label style=${styles.label}>作者主页面板：</label>
+              <input
+                type="checkbox"
+                checked=${showProfilePanel}
+                onChange=${(e) => setShowProfilePanel(e.target.checked)}
+              />
+            </div>
+            <div style="font-size: 12px; color: #666;">
+              用来控制作者主页右下角统一入口的显示。
             </div>
           </fieldset>
 
@@ -2744,6 +2922,157 @@ const requires = this;
   })();
   // #endregion
 
+  // #region Floating Action Panel
+  const FloatingPanelComponents = (() => {
+    const { useEffect, useState } = requires?.htmPreact;
+    const html = requires?.htmPreact?.html;
+
+    const styles = {
+      panel: `
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 240px;
+        max-width: min(320px, calc(100vw - 32px));
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(18, 18, 20, 0.94);
+        color: #fff;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.22);
+        backdrop-filter: blur(10px);
+        font-family: sans-serif;
+      `,
+      section: `
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      `,
+      sectionHeader: `
+        font-size: 12px;
+        color: rgba(255,255,255,0.7);
+      `,
+      status: `
+        font-size: 13px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+      `,
+      button: `
+        border: none;
+        border-radius: 10px;
+        padding: 8px 12px;
+        cursor: pointer;
+        background: rgba(255,255,255,0.12);
+        color: #fff;
+        font-size: 12px;
+      `,
+      primaryButton: `
+        border: none;
+        border-radius: 10px;
+        padding: 8px 12px;
+        cursor: pointer;
+        background: #fe2c55;
+        color: #fff;
+        font-size: 12px;
+      `,
+      buttonRow: `
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      `,
+    };
+
+    const App = ({ mediaHandler, profilePageHandler }) => {
+      const [profileSnapshot, setProfileSnapshot] = useState(
+        profilePageHandler.getPanelSnapshot()
+      );
+
+      useEffect(() => {
+        return profilePageHandler.subscribe((nextSnapshot) => {
+          setProfileSnapshot(nextSnapshot);
+        });
+      }, [profilePageHandler]);
+
+      useEffect(() => {
+        return Config.subscribe(() => {
+          setProfileSnapshot(profilePageHandler.getPanelSnapshot());
+        });
+      }, [profilePageHandler]);
+
+      const showProfileSection =
+        profileSnapshot.enabled &&
+        (profileSnapshot.isProfilePage || profileSnapshot.jobRunning);
+
+      if (!showProfileSection) {
+        return null;
+      }
+
+      return html`
+        <div class="dy-dl-floating-panel" style=${styles.panel}>
+          ${showProfileSection
+            ? html`
+                <div style=${styles.section}>
+                  <div style=${styles.sectionHeader}>作者主页下载</div>
+                  <div style=${styles.status}>
+                    ${profileSnapshot.summary}
+                  </div>
+                  <div style=${styles.buttonRow}>
+                    <button
+                      type="button"
+                      style=${styles.primaryButton}
+                      onClick=${() =>
+                        profilePageHandler.open_profile_download_modal()}
+                    >
+                      ${profileSnapshot.jobRunning ? "查看任务" : "打开任务面板"}
+                    </button>
+                    <button
+                      type="button"
+                      style=${styles.button}
+                      onClick=${() => mediaHandler.open_config_modal()}
+                    >
+                      设置
+                    </button>
+                  </div>
+                </div>
+              `
+            : null}
+        </div>
+      `;
+    };
+
+    return { App };
+  })();
+  // #endregion
+
+  class FloatingPanel {
+    /**
+     * @param {{mediaHandler: MediaHandler, profilePageHandler: ProfilePageHandler}} options
+     */
+    constructor(options) {
+      this.mediaHandler = options.mediaHandler;
+      this.profilePageHandler = options.profilePageHandler;
+      this.root = document.createElement("div");
+      this.root.className = "dy-dl-floating-panel-root";
+      document.body.appendChild(this.root);
+      this.render();
+    }
+
+    render() {
+      const { html, render } = requires.htmPreact;
+      const { App } = FloatingPanelComponents;
+      render(
+        html`<${App}
+          mediaHandler=${this.mediaHandler}
+          profilePageHandler=${this.profilePageHandler}
+        />`,
+        this.root
+      );
+    }
+  }
+
   // #region 主入口组件 ---
   /**
    * 这个类是主要逻辑
@@ -2926,6 +3255,10 @@ const requires = this;
           releaseLock();
         }
       };
+    }
+
+    _format_toast_message(prefix, message) {
+      return prefix ? `${prefix} ${message}` : message;
     }
 
     /**
@@ -3125,29 +3458,40 @@ const requires = this;
      *
      * 如果是图集形式，必须从 images 这个数组里面取字段，其他字段都有可能是 fallback 值
      */
-    async _download_current_media_logic() {
-      if (!this.current_media) {
-        alert("[dy-dl]无当前媒体信息，请尝试播放视频或等待加载。");
-        return;
+    async _download_media_logic(media, options = {}) {
+      const {
+        toastTarget = document.querySelector(".dy-dl-video-btn"),
+        toast = null,
+        toastPrefix = "",
+        alertOnFail = true,
+        addHistory = true,
+      } = options;
+      if (!media) {
+        if (alertOnFail) {
+          alert("[dy-dl]无当前媒体信息，请尝试播放视频或等待加载。");
+        }
+        return { ok: false, reason: "missing_media" };
       }
-      const { video, images } = this.current_media;
-      const filename_base = this._build_filename(this.current_media);
+      const { video, images } = media;
+      const filename_base = this._build_filename(media);
 
       // 判断是否为图集
       const isAlbum = Array.isArray(images) && images.length > 0;
       const total = isAlbum ? images.length : 1;
 
-      const toast = createToast(
-        document.querySelector(".dy-dl-video-btn"),
-        5 * 1000
-      );
+      const scopedToast = toast || createToast(toastTarget, 5 * 1000);
+      const toastUpdate = (message, duration = 5 * 1000) =>
+        scopedToast.update(
+          this._format_toast_message(toastPrefix, message),
+          duration
+        );
 
       if (isAlbum) {
         // 下载图集
         // TODO 要是能支持 zip 打包会更好一点
         let downloadedCount = 0;
         for (let idx = 0; idx < images.length; idx++) {
-          toast.update(`下载图集 (${idx + 1}/${total})`);
+          toastUpdate(`下载图集 (${idx + 1}/${total})`);
 
           const imageItem = images[idx];
           const item_filename = `${filename_base}_${idx + 1}`; // 1-based index for files
@@ -3157,12 +3501,13 @@ const requires = this;
             // 包含视频的图集项
             const video_urls = this._get_video_urls(image_video);
             if (video_urls.length > 0) {
-              await this.downloader.download_file(
+              const ok = await this.downloader.download_file(
                 video_urls[0],
                 item_filename,
-                video_urls
+                video_urls,
+                { silent: !alertOnFail, media }
               );
-              downloadedCount++;
+              if (ok) downloadedCount++;
             } else {
               console.warn("[dy-dl]图集内视频无有效URL，跳过下载", image_video);
             }
@@ -3175,40 +3520,62 @@ const requires = this;
             imageItem?.urlList?.filter(Boolean) ||
             imageItem?.downloadUrlList.filter(Boolean);
           if (img_urls && img_urls.length > 0) {
-            await this.downloader.download_file(
+            const ok = await this.downloader.download_file(
               img_urls[0],
               item_filename,
-              img_urls
+              img_urls,
+              { silent: !alertOnFail, media }
             );
-            downloadedCount++;
+            if (ok) downloadedCount++;
           } else {
             console.warn("[dy-dl]图集内图片无有效URL，跳过下载", imageItem);
           }
         }
-        toast.update(`图集下载完成`);
+        toastUpdate(`图集下载完成`);
         if (downloadedCount === 0 && images.length > 0) {
-          alert("[dy-dl]图集下载失败，未找到有效媒体链接。");
+          if (alertOnFail) {
+            alert("[dy-dl]图集下载失败，未找到有效媒体链接。");
+          }
+          return { ok: false, reason: "album_no_valid_media" };
         }
         if (downloadedCount) {
-          DownloadHistory.add(this.current_media);
+          if (addHistory) {
+            DownloadHistory.add(media);
+          }
         }
-        return;
+        return { ok: downloadedCount > 0, downloadedCount };
       } else {
-        toast.update("正在下载...");
+        toastUpdate("正在下载...");
         // 单视频或单图片（老版本可能直接在video字段放图片信息，但新版通常是images）
         const video_urls = this._get_video_urls(video);
         if (video_urls.length !== 0) {
-          await this.downloader.download_file(
+          const ok = await this.downloader.download_file(
             video_urls[0],
             filename_base,
-            video_urls
+            video_urls,
+            { silent: !alertOnFail, media }
           );
-          DownloadHistory.add(this.current_media);
-          toast.update("下载完成");
-          return;
+          if (ok && addHistory) {
+            DownloadHistory.add(media);
+          }
+          if (ok) {
+            toastUpdate("下载完成");
+            return { ok: true };
+          }
         }
       }
-      alert("[dy-dl]无法下载当前媒体，尝试刷新、暂停、播放等操作后重试。");
+      if (alertOnFail) {
+        alert("[dy-dl]无法下载当前媒体，尝试刷新、暂停、播放等操作后重试。");
+      }
+      return { ok: false, reason: "no_valid_media" };
+    }
+
+    async _download_current_media_logic() {
+      return this._download_media_logic(this.current_media, {
+        toastTarget: document.querySelector(".dy-dl-video-btn"),
+        alertOnFail: true,
+        addHistory: true,
+      });
     }
 
     // 下载封面
@@ -3221,7 +3588,9 @@ const requires = this;
       // 第一个是压缩的，所以用第二个
       const thumb = video.originCoverUrlList[1] || video.originCoverUrlList[0];
       const filename_base = this._build_filename(this.current_media);
-      this.downloader.download_file(thumb, `thumb_${filename_base}`);
+      this.downloader.download_file(thumb, `thumb_${filename_base}`, [], {
+        media: this.current_media,
+      });
     }
 
     // 显示媒体详情
@@ -3364,6 +3733,682 @@ const requires = this;
       return root;
     }
   }
+
+  // #region Profile Page Handler
+  class ProfilePageHandler {
+    static FEED_CARD_SELECTOR =
+      '.waterfall-videoCardContainer[href], [href*="/video/"][target="_blank"], [href*="/note/"][target="_blank"]';
+
+    /** @type {MediaHandler} */
+    mediaHandler;
+    feedMediaCache = new Map();
+    listeners = new Set();
+    jobRunning = false;
+    jobStopRequested = false;
+    jobState = null;
+    taskModal = null;
+    taskTitle = null;
+    taskStatus = null;
+    taskHint = null;
+    taskActionButton = null;
+    taskStopButton = null;
+    taskResetButton = null;
+    taskSettingsButton = null;
+
+    /**
+     * @param {{mediaHandler: MediaHandler}} options
+     */
+    constructor(options) {
+      this.mediaHandler = options.mediaHandler;
+    }
+
+    static findReactFiber(node) {
+      let current = node;
+      while (current instanceof HTMLElement) {
+        const fiberKey = Object.keys(current).find((key) =>
+          key.startsWith("__reactFiber$")
+        );
+        if (fiberKey) {
+          return current[fiberKey];
+        }
+        current = current.parentElement;
+      }
+      return null;
+    }
+
+    static getAwemeIdFromHref(href = "") {
+      const match = href.match(/\/(?:video|note)\/(\d+)/);
+      return match?.[1] || "";
+    }
+
+    _set_text_content(node, text) {
+      if (!node) return;
+      if (node.textContent === text) return;
+      node.textContent = text;
+    }
+
+    subscribe(listener) {
+      this.listeners.add(listener);
+      listener(this.getPanelSnapshot());
+      return () => {
+        this.listeners.delete(listener);
+      };
+    }
+
+    getPanelSnapshot() {
+      const enabled = Config.global.features.show_profile_panel !== false;
+      const isProfilePage = this._is_profile_page();
+      const counts = this._get_profile_download_counts();
+      const profile =
+        !this.jobRunning && isProfilePage ? this._get_profile_context() : null;
+      const profileName =
+        this.jobState?.profileName || profile?.profileName || "当前作者主页";
+      const statusLabel = this.jobRunning
+        ? "进行中"
+        : this.jobState?.status === "completed"
+        ? "已完成"
+        : this.jobState?.status === "paused"
+        ? "已暂停"
+        : "待开始";
+
+      return {
+        enabled,
+        isProfilePage,
+        jobRunning: this.jobRunning,
+        profileName,
+        counts,
+        summary: !isProfilePage && !this.jobRunning
+          ? "仅在作者主页显示入口。"
+          : `${profileName}\n状态：${statusLabel}  已发现：${counts.known || 0}  已下载：${counts.downloaded || 0}  失败：${counts.failed || 0}`,
+      };
+    }
+
+    _notify_panel() {
+      const snapshot = this.getPanelSnapshot();
+      this.listeners.forEach((listener) => {
+        try {
+          listener(snapshot);
+        } catch (error) {
+          console.error("[dy-dl]作者主页面板订阅失败", error);
+        }
+      });
+    }
+
+    refresh() {
+      if (!this._is_profile_page()) {
+        if (this.jobRunning) {
+          this.stop_profile_download_job();
+        }
+        this._notify_panel();
+        return;
+      }
+      this._notify_panel();
+    }
+
+    _is_profile_page() {
+      return isProfilePagePath();
+    }
+
+    _get_profile_context() {
+      if (!this._is_profile_page()) return null;
+
+      const pathSecUid = location.pathname.replace(/^\/user\//, "").trim();
+      const scannedMedia = this._collect_current_feed_media().find(
+        (media) => media?.authorInfo?.secUid
+      );
+      const secUid =
+        pathSecUid && pathSecUid !== "self"
+          ? pathSecUid
+          : scannedMedia?.authorInfo?.secUid || pathSecUid || "";
+      const titleName = document.title.split("的抖音")[0]?.trim() || "";
+      const profileName = scannedMedia?.authorInfo?.nickname || titleName;
+      const activeTab = new URLSearchParams(location.search).get("showTab") || "post";
+      const profileKey = `${secUid || pathSecUid || "self"}:${activeTab}`;
+
+      return {
+        secUid,
+        profileName,
+        tabKey: activeTab,
+        profileKey,
+      };
+    }
+
+    _ensure_job_state(profile = this._get_profile_context()) {
+      if (!profile) {
+        this.jobState = null;
+        return null;
+      }
+      if (
+        !this.jobState ||
+        (!this.jobRunning && this.jobState.profileKey !== profile.profileKey)
+      ) {
+        this.jobState = ProfileDownloadState.load(profile.profileKey, profile);
+      }
+      return this.jobState;
+    }
+
+    _save_job_state() {
+      if (!this.jobState?.profileKey) return this.jobState;
+      this.jobState = ProfileDownloadState.save(
+        this.jobState.profileKey,
+        this.jobState
+      );
+      return this.jobState;
+    }
+
+    _extract_feed_media(card) {
+      let fiber = ProfilePageHandler.findReactFiber(card);
+      while (fiber) {
+        const props = fiber.memoizedProps;
+        const candidate =
+          props?.awemeInfo ||
+          props?.itemInfo?.awemeInfo ||
+          (props?.itemInfo?.awemeId ? props.itemInfo : null);
+        if (candidate?.awemeId) {
+          this.feedMediaCache.set(candidate.awemeId, candidate);
+          return candidate;
+        }
+        fiber = fiber.return;
+      }
+
+      const awemeId = ProfilePageHandler.getAwemeIdFromHref(
+        card.getAttribute("href")
+      );
+      return awemeId ? this.feedMediaCache.get(awemeId) || null : null;
+    }
+
+    _collect_current_feed_media() {
+      const medias = [];
+      const seen = new Set();
+      document
+        .querySelectorAll(ProfilePageHandler.FEED_CARD_SELECTOR)
+        .forEach((card) => {
+          const media = this._extract_feed_media(/** @type {HTMLElement} */ (card));
+          if (!media?.awemeId || seen.has(media.awemeId)) return;
+          seen.add(media.awemeId);
+          this.feedMediaCache.set(media.awemeId, media);
+          medias.push(media);
+        });
+      return medias;
+    }
+
+    _merge_profile_media_into_state(mediaList) {
+      if (!this.jobState) return;
+      const knownIds = new Set(this.jobState.knownIds || []);
+      (mediaList || []).forEach((media) => {
+        if (!media?.awemeId) return;
+        knownIds.add(media.awemeId);
+      });
+      this.jobState.knownIds = Array.from(knownIds);
+    }
+
+    _mark_profile_item_downloaded(media) {
+      if (!this.jobState || !media?.awemeId) return;
+      const downloadedIds = new Set(this.jobState.downloadedIds || []);
+      downloadedIds.add(media.awemeId);
+      this.jobState.downloadedIds = Array.from(downloadedIds);
+      if (this.jobState.failedItems?.[media.awemeId]) {
+        delete this.jobState.failedItems[media.awemeId];
+      }
+    }
+
+    _mark_profile_item_failed(media, reason = "unknown") {
+      if (!this.jobState || !media?.awemeId) return;
+      const prev = this.jobState.failedItems?.[media.awemeId] || {};
+      this.jobState.failedItems = this.jobState.failedItems || {};
+      this.jobState.failedItems[media.awemeId] = {
+        count: Number(prev.count || 0) + 1,
+        reason,
+        updatedAt: Date.now(),
+        desc: media.desc || prev.desc || "",
+      };
+    }
+
+    _get_profile_download_counts() {
+      return {
+        known: this.jobState?.knownIds?.length || 0,
+        downloaded: this.jobState?.downloadedIds?.length || 0,
+        failed: Object.keys(this.jobState?.failedItems || {}).length,
+      };
+    }
+
+    open_profile_download_modal() {
+      if (!this._is_profile_page()) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+
+      this._ensure_job_state();
+      if (this.taskModal?.overlay?.isConnected) {
+        this._render_task_modal();
+        return;
+      }
+
+      const modal = new Modal((root, overlay) => {
+        overlay.style.zIndex = "999999";
+        root.style.width = "520px";
+        root.style.maxWidth = "calc(100vw - 32px)";
+        root.style.padding = "0";
+        root.style.overflow = "hidden";
+
+        const container = document.createElement("div");
+        Object.assign(container.style, {
+          display: "flex",
+          flexDirection: "column",
+          gap: "14px",
+          padding: "20px",
+          fontFamily: "sans-serif",
+        });
+
+        const title = document.createElement("div");
+        Object.assign(title.style, {
+          fontSize: "18px",
+          fontWeight: "600",
+          color: "#111",
+        });
+
+        const status = document.createElement("div");
+        Object.assign(status.style, {
+          whiteSpace: "pre-wrap",
+          lineHeight: "1.6",
+          color: "#333",
+          fontSize: "14px",
+        });
+
+        const hint = document.createElement("div");
+        Object.assign(hint.style, {
+          color: "#666",
+          fontSize: "12px",
+          lineHeight: "1.6",
+        });
+
+        const actions = document.createElement("div");
+        Object.assign(actions.style, {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "10px",
+        });
+
+        const buildButton = (label, bg = "#f3f4f6", color = "#111") => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = label;
+          Object.assign(button.style, {
+            border: "none",
+            borderRadius: "10px",
+            padding: "9px 14px",
+            cursor: "pointer",
+            background: bg,
+            color,
+            fontSize: "13px",
+          });
+          return button;
+        };
+
+        const actionButton = buildButton("开始全量", "#fe2c55", "#fff");
+        const stopButton = buildButton("停止");
+        const resetButton = buildButton("重置记录");
+        const settingsButton = buildButton("设置");
+        const closeButton = buildButton("关闭");
+
+        actionButton.addEventListener("click", () => {
+          this.start_profile_download_job();
+        });
+        stopButton.addEventListener("click", () => {
+          this.stop_profile_download_job();
+        });
+        resetButton.addEventListener("click", () => {
+          this.reset_profile_download_job_state();
+        });
+        settingsButton.addEventListener("click", () => {
+          this.mediaHandler.open_config_modal();
+        });
+        closeButton.addEventListener("click", () => {
+          modal.close();
+        });
+
+        actions.append(
+          actionButton,
+          stopButton,
+          resetButton,
+          settingsButton,
+          closeButton
+        );
+        container.append(title, status, hint, actions);
+        root.appendChild(container);
+
+        this.taskTitle = title;
+        this.taskStatus = status;
+        this.taskHint = hint;
+        this.taskActionButton = actionButton;
+        this.taskStopButton = stopButton;
+        this.taskResetButton = resetButton;
+        this.taskSettingsButton = settingsButton;
+      });
+
+      const closeModal = modal.close.bind(modal);
+      modal.close = () => {
+        closeModal();
+        if (this.taskModal === modal) {
+          this.taskModal = null;
+          this.taskTitle = null;
+          this.taskStatus = null;
+          this.taskHint = null;
+          this.taskActionButton = null;
+          this.taskStopButton = null;
+          this.taskResetButton = null;
+          this.taskSettingsButton = null;
+        }
+      };
+
+      this.taskModal = modal;
+      this._render_task_modal();
+    }
+
+    _render_task_modal() {
+      this._notify_panel();
+      if (!this.taskModal) return;
+
+      const isProfilePage = this._is_profile_page();
+      const profile =
+        !this.jobRunning && isProfilePage ? this._get_profile_context() : null;
+      if (profile) {
+        this._ensure_job_state(profile);
+      }
+
+      const counts = this._get_profile_download_counts();
+      const profileName =
+        this.jobState?.profileName || profile?.profileName || "当前作者主页";
+      const statusLabel = this.jobRunning
+        ? "进行中"
+        : this.jobState?.status === "completed"
+        ? "已完成"
+        : this.jobState?.status === "paused"
+        ? "已暂停"
+        : "待开始";
+
+      if (this.taskTitle) {
+        this._set_text_content(
+          this.taskTitle,
+          `作者主页下载任务 - ${profileName}`
+        );
+      }
+
+      if (this.taskStatus) {
+        if (!isProfilePage && !this.jobRunning) {
+          this._set_text_content(
+            this.taskStatus,
+            "请先打开作者主页，再开始全量下载。"
+          );
+        } else {
+          this._set_text_content(
+            this.taskStatus,
+            `状态：${statusLabel}\n已发现：${counts.known || 0}\n已下载：${counts.downloaded || 0}\n失败：${counts.failed || 0}`
+          );
+        }
+      }
+
+      if (this.taskHint) {
+        this._set_text_content(
+          this.taskHint,
+          this.jobRunning
+            ? "任务运行时会自动向下滚动当前作者主页并下载未处理作品。离开作者主页后任务会自动暂停。"
+            : "点击“开始全量”后会自动按当前作者主页的作品列表轮询下载；关闭弹窗不会丢失已记录的进度。"
+        );
+      }
+
+      if (this.taskActionButton) {
+        this._set_text_content(
+          this.taskActionButton,
+          counts.downloaded > 0 || counts.failed > 0
+            ? "继续/补漏"
+            : "开始全量"
+        );
+        this.taskActionButton.disabled = !isProfilePage || this.jobRunning;
+        this.taskActionButton.style.opacity =
+          !isProfilePage || this.jobRunning ? "0.6" : "1";
+      }
+
+      if (this.taskStopButton) {
+        this.taskStopButton.disabled = !this.jobRunning;
+        this.taskStopButton.style.opacity = this.jobRunning ? "1" : "0.6";
+      }
+
+      if (this.taskResetButton) {
+        this.taskResetButton.disabled = !isProfilePage;
+        this.taskResetButton.style.opacity = isProfilePage ? "1" : "0.6";
+      }
+
+      this._notify_panel();
+    }
+
+    stop_profile_download_job() {
+      this.jobStopRequested = true;
+      if (this.jobState?.profileKey) {
+        this.jobState.status = "paused";
+        this._save_job_state();
+      }
+      this._render_task_modal();
+    }
+
+    reset_profile_download_job_state() {
+      const profile = this._get_profile_context();
+      if (!profile) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+      if (!confirm("确定清空当前作者主页的下载记录吗？")) {
+        return;
+      }
+      if (this.jobRunning) {
+        this.stop_profile_download_job();
+      }
+      ProfileDownloadState.reset(profile.profileKey);
+      this.jobState = ProfileDownloadState.create_default(profile);
+      this._render_task_modal();
+    }
+
+    async start_profile_download_job() {
+      if (!this._is_profile_page()) {
+        alert("[dy-dl]请在作者主页中使用全量下载。");
+        return;
+      }
+      if (this.jobRunning) {
+        return;
+      }
+      if (this.mediaHandler.downloading) {
+        alert("[dy-dl]当前已有下载任务在进行中，请稍后再试。");
+        return;
+      }
+
+      this.open_profile_download_modal();
+      const releaseLock = this.mediaHandler._flag_start_download();
+      this.jobRunning = true;
+      this.jobStopRequested = false;
+      this._render_task_modal();
+      try {
+        await this._run_profile_download_job_logic();
+      } finally {
+        this.jobRunning = false;
+        this.jobStopRequested = false;
+        releaseLock();
+        this._render_task_modal();
+      }
+    }
+
+    async _run_profile_download_job_logic() {
+      const profile = this._get_profile_context();
+      if (!profile) {
+        alert("[dy-dl]请先打开作者主页。");
+        return;
+      }
+
+      this._ensure_job_state(profile);
+      this.jobState.status = "running";
+      this.jobState.lastRunAt = Date.now();
+      this.jobState.completedAt = 0;
+      this._save_job_state();
+      this._render_task_modal();
+
+      const toastTarget = this.taskActionButton;
+      const toast = createToast(toastTarget, 0);
+      let idleRounds = 0;
+
+      while (!this.jobStopRequested) {
+        if (!this._is_profile_page()) {
+          this.jobStopRequested = true;
+          break;
+        }
+
+        const mediaList = this._collect_current_feed_media();
+        this._merge_profile_media_into_state(mediaList);
+        this._save_job_state();
+        this._render_task_modal();
+
+        const downloadedSet = new Set(this.jobState?.downloadedIds || []);
+        const pendingMedia = mediaList.filter(
+          (media) => media?.awemeId && !downloadedSet.has(media.awemeId)
+        );
+
+        if (pendingMedia.length > 0) {
+          idleRounds = 0;
+          for (let idx = 0; idx < pendingMedia.length; idx++) {
+            if (this.jobStopRequested) break;
+            const media = pendingMedia[idx];
+            const counts = this._get_profile_download_counts();
+            toast.update(
+              `作者全量 (${counts.downloaded + 1}/${counts.known || "?"}) ${
+                media.desc || media.awemeId
+              }`
+            );
+            const result = await this.mediaHandler._download_media_logic(media, {
+              toastTarget,
+              toast,
+              toastPrefix: "作者全量",
+              alertOnFail: false,
+              addHistory: true,
+            });
+
+            if (result?.ok) {
+              this._mark_profile_item_downloaded(media);
+            } else {
+              this._mark_profile_item_failed(
+                media,
+                result?.reason || "download_failed"
+              );
+            }
+            this._save_job_state();
+            this._render_task_modal();
+          }
+          continue;
+        }
+
+        toast.update(
+          `作者全量：已扫到 ${this.jobState?.knownIds?.length || 0} 个，继续向下检查...`
+        );
+        const beforeKnown = this.jobState?.knownIds?.length || 0;
+        const didScroll = await this._scroll_profile_page_once();
+        const afterMedia = this._collect_current_feed_media();
+        this._merge_profile_media_into_state(afterMedia);
+        this._save_job_state();
+        this._render_task_modal();
+
+        const foundNewMedia = (this.jobState?.knownIds?.length || 0) > beforeKnown;
+        if (!didScroll && !foundNewMedia) {
+          idleRounds++;
+        } else if (!foundNewMedia) {
+          idleRounds++;
+        } else {
+          idleRounds = 0;
+        }
+
+        if (idleRounds >= 3) {
+          break;
+        }
+      }
+
+      if (this.jobStopRequested) {
+        this.jobState.status = "paused";
+        this._save_job_state();
+        toast.update(
+          this._is_profile_page()
+            ? "作者全量下载已暂停"
+            : "已离开作者主页，任务已暂停",
+          3000
+        );
+      } else {
+        this.jobState.status = "completed";
+        this.jobState.completedAt = Date.now();
+        this._save_job_state();
+        const counts = this._get_profile_download_counts();
+        toast.update(
+          `作者全量完成：已下载 ${counts.downloaded} 个，失败 ${counts.failed} 个`,
+          5000
+        );
+        if (counts.failed > 0) {
+          alert(
+            `[dy-dl]作者主页全量下载完成，成功 ${counts.downloaded} 个，失败 ${counts.failed} 个。下次点击“继续/补漏”会跳过已下载作品。`
+          );
+        }
+      }
+    }
+
+    _find_profile_scroll_container() {
+      const firstCard = document.querySelector(ProfilePageHandler.FEED_CARD_SELECTOR);
+      let current =
+        firstCard instanceof HTMLElement ? firstCard.parentElement : null;
+      while (current instanceof HTMLElement) {
+        const style = window.getComputedStyle(current);
+        const isScrollable =
+          ["auto", "scroll", "overlay"].includes(style.overflowY) &&
+          current.scrollHeight > current.clientHeight + 100;
+        if (isScrollable) {
+          return current;
+        }
+        current = current.parentElement;
+      }
+
+      return (
+        document.querySelector(".route-scroll-container") ||
+        document.querySelector(".parent-route-container") ||
+        document.scrollingElement ||
+        document.documentElement
+      );
+    }
+
+    async _scroll_profile_page_once() {
+      const container = this._find_profile_scroll_container();
+      if (!container) return false;
+
+      const isDocumentScroll =
+        container === document.body ||
+        container === document.documentElement ||
+        container === document.scrollingElement;
+
+      const beforeTop = isDocumentScroll ? window.scrollY : container.scrollTop;
+      const clientHeight = isDocumentScroll
+        ? window.innerHeight
+        : container.clientHeight;
+      const scrollHeight = container.scrollHeight;
+      const maxTop = Math.max(0, scrollHeight - clientHeight);
+      const nextTop = Math.min(
+        beforeTop + Math.max(clientHeight * 0.85, 480),
+        maxTop
+      );
+
+      if (nextTop <= beforeTop + 4) {
+        return false;
+      }
+
+      if (isDocumentScroll) {
+        window.scrollTo({ top: nextTop, behavior: "smooth" });
+      } else {
+        container.scrollTo({ top: nextTop, behavior: "smooth" });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return true;
+    }
+  }
   // #endregion
 
   // #region DOM Patcher
@@ -3376,19 +4421,27 @@ const requires = this;
     videoHandler;
     /** @type {DanmakuHandler} */
     danmakuHandler;
+    /** @type {ProfilePageHandler} */
+    profilePageHandler;
     /** @type {MutationObserver} */
     observer;
 
     /**
-     * @param {{downloader: Downloader, mediaHandler: MediaHandler, videoHandler: VideoHandler, danmakuHandler: DanmakuHandler}} options
+     * @param {{downloader: Downloader, mediaHandler: MediaHandler, videoHandler: VideoHandler, danmakuHandler: DanmakuHandler, profilePageHandler: ProfilePageHandler}} options
      */
     constructor(options) {
-      const { downloader, mediaHandler, videoHandler, danmakuHandler } =
-        options;
+      const {
+        downloader,
+        mediaHandler,
+        videoHandler,
+        danmakuHandler,
+        profilePageHandler,
+      } = options;
       this.downloader = downloader;
       this.mediaHandler = mediaHandler;
       this.videoHandler = videoHandler;
       this.danmakuHandler = danmakuHandler;
+      this.profilePageHandler = profilePageHandler;
       this.observer = new MutationObserver(this._handleMutations.bind(this));
     }
 
@@ -3438,35 +4491,31 @@ const requires = this;
             );
             if (tooltipNode) {
               setTimeout(() => {
-                // Delay to ensure content is populated
                 this._handleTooltip(/** @type {HTMLElement} */ (tooltipNode));
               });
               return;
             }
           }
-          // Fullscreen image modal
-          // Heuristic: direct body child, no classes, contains an img
           if (
             elementNode.parentElement === document.body &&
             elementNode.classList.length === 0
           ) {
             setTimeout(() => {
-              // Delay for modal rendering
               this._handleModal(elementNode);
             });
             return;
           }
-          // Video player controls
           if (
             elementNode.localName === "xg-controls" ||
             elementNode.querySelector("xg-controls")
           ) {
-            // FIXME: 这里有个问题，feed里面还有直播流，直播画面不应该有下载按钮，因为没用（不过有也没什么，不点就行了...）
             this._handleXgControl(/** @type {HTMLElement} */ (elementNode));
             return;
           }
         });
       });
+
+      this.profilePageHandler.refresh();
     }
 
     /**
@@ -3475,24 +4524,21 @@ const requires = this;
     _handleModal(modalNode) {
       const close_icon = modalNode.querySelector("#svg_icon_ic_close");
       const img = modalNode.querySelector("img");
-      // Modals often have a specific container for the image, let's try to find it.
-      // This might be fragile. The original used img.parentElement.
       const container =
         img?.closest('div[style*="transform: scale(1)"] > div') ||
         img?.parentElement;
 
       if (!close_icon || !img || !container) return;
-      if (container.querySelector(".dy-dl-modal-btn")) return; // Button already exists
+      if (container.querySelector(".dy-dl-modal-btn")) return;
 
       const downloadButton = document.createElement("div");
       downloadButton.textContent = "下载图片";
-      downloadButton.className = "LV01TNDE dy-dl-modal-btn"; // Added a specific class for checking
+      downloadButton.className = "LV01TNDE dy-dl-modal-btn";
       downloadButton.addEventListener("click", (e) => {
-        e.stopPropagation(); // Prevent modal from closing
+        e.stopPropagation();
         const imgSrc = img.src;
         this.downloader.download_file(imgSrc, "douyin_image");
       });
-      // Styling from original script
       downloadButton.style.position = "absolute";
       downloadButton.style.bottom = "35px";
       downloadButton.style.right = "35px";
@@ -3501,7 +4547,7 @@ const requires = this;
       downloadButton.style.padding = "5px 10px";
       downloadButton.style.borderRadius = "4px";
       downloadButton.style.fontSize = "16px";
-      downloadButton.style.zIndex = "999999"; // Ensure it's on top of other modal elements
+      downloadButton.style.zIndex = "999999";
       downloadButton.style.cursor = "pointer";
       container.appendChild(downloadButton);
     }
@@ -3515,20 +4561,20 @@ const requires = this;
 
       if (!tooltipContent.textContent?.includes("添加到表情")) return;
 
-      const imgNode = DOMPatcher.findImage(tooltipNode); // Search upwards from tooltip wrapper
+      const imgNode = DOMPatcher.findImage(tooltipNode);
       if (!imgNode?.src) return;
 
-      if (tooltipContent.querySelector(".download-button")) return; // Button already exists
+      if (tooltipContent.querySelector(".download-button")) return;
 
       const downloadButton = document.createElement("div");
       downloadButton.textContent = "下载表情包";
-      downloadButton.className = "LV01TNDE download-button"; // Class from original
+      downloadButton.className = "LV01TNDE download-button";
 
-      downloadButton.style.cursor = "pointer"; // Make it look clickable
-      downloadButton.style.paddingTop = "4px"; // Add some spacing
+      downloadButton.style.cursor = "pointer";
+      downloadButton.style.paddingTop = "4px";
 
       downloadButton.addEventListener("click", (e) => {
-        e.stopPropagation(); // Prevent other tooltip actions
+        e.stopPropagation();
         const imgSrc = imgNode.src;
         this.downloader.download_file(imgSrc, "douyin_emoticon");
       });
@@ -3542,7 +4588,7 @@ const requires = this;
     _handleXgControl(xg_control_node) {
       const right_grid = xg_control_node.querySelector(".xg-right-grid");
       if (!right_grid) return;
-      if (right_grid.querySelector(".dy-dl-video-btn")) return; // Button already exists
+      if (right_grid.querySelector(".dy-dl-video-btn")) return;
 
       const btn = new TooltipsButton(
         "插件",
@@ -3612,15 +4658,10 @@ const requires = this;
             },
           },
         ],
-        (e) => {
-          // TODO: 没用... 会被劫持，所以移动到上面的 item 中去了
-          // e.stopPropagation();
-          // this.downloadCurrentMediaFn();
-        }
+        (e) => {}
       );
       const downloadButton = btn.render();
 
-      // Try to insert before volume or settings for better placement
       const qualitySwitch = right_grid.querySelector(
         ".xgplayer-quality-setting"
       );
@@ -3630,7 +4671,7 @@ const requires = this;
       } else if (volumeControl) {
         right_grid.insertBefore(downloadButton, volumeControl);
       } else {
-        right_grid.appendChild(downloadButton); // Fallback
+        right_grid.appendChild(downloadButton);
       }
     }
 
@@ -3645,6 +4686,7 @@ const requires = this;
         .forEach((controls) =>
           this._handleXgControl(/** @type {HTMLElement} */ (controls))
         );
+      this.profilePageHandler.refresh();
     }
   }
   // #endregion
@@ -3976,12 +5018,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const mediaHandler = new MediaHandler(downloader);
   const videoHandler = new VideoHandler();
   const danmakuHandler = new DanmakuHandler();
-  // Pass the already bound method from mediaHandler instance
+  const profilePageHandler = new ProfilePageHandler({
+    mediaHandler,
+  });
+  Config.subscribe(() => {
+    profilePageHandler.refresh();
+  });
+  new FloatingPanel({
+    mediaHandler,
+    profilePageHandler,
+  });
   const domPatcher = new DOMPatcher({
     downloader,
     mediaHandler,
     videoHandler,
     danmakuHandler,
+    profilePageHandler,
   });
   const hotkeyManager = new HotkeyManager();
 
