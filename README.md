@@ -118,6 +118,18 @@
 
 支持使用外部下载器下载文件，方便归档整理。
 
+#### 关于保存路径
+
+暂不支持自定义保存路径，后续会支持
+
+目前默认保存路径是如下格式：
+
+- 视频: `./douyin/${user_dir}/videos`
+- 图片: `./douyin/${user_dir}/images`
+- 其他: `./douyin/${user_dir}/others`
+
+`user_dir` 为 `${userId}_${nickname}`
+
 #### 历史
 
 简单存储下载历史，方便检查，会存下作品名和作品地址。
