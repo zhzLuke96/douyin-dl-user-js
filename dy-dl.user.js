@@ -30,6 +30,7 @@ const requires = this;
    * NOTE: 虽然都叫 HTML 但是和 htm 里面的不一样
    */
   const html = (strings, ...values) => String.raw(strings, ...values);
+  const css = (strings, ...values) => String.raw(strings, ...values);
 
   /**
    * 在context下执行代码
@@ -202,6 +203,152 @@ const requires = this;
 
     return result;
   }
+  /**
+   * @param {Function} func - The function to debounce.
+   * @param {number} wait - Delay in milliseconds.
+   */
+  function debounce(func, wait) {
+    let timeoutId;
+
+    return function (...args) {
+      // 1. Clear any existing timer
+      clearTimeout(timeoutId);
+
+      // 2. Start a new timer
+      timeoutId = setTimeout(() => {
+        // 3. Execute with original 'this' context and arguments
+        func.apply(this, args);
+      }, wait);
+    };
+  }
+  /**
+   * @param {Function} func - The function to debounce.
+   * @param {number} wait - Delay in milliseconds.
+   */
+  function throttle(func, limit) {
+    let inThrottle;
+    return function (...args) {
+      if (!inThrottle) {
+        func.apply(this, args);
+        inThrottle = true;
+        setTimeout(() => (inThrottle = false), limit);
+      }
+    };
+  }
+  // #endregion
+
+  // #region 事件
+  /**
+   * @template {Record<string, any[]>} Events
+   */
+  class Emitter {
+    constructor() {
+      /** @type {Map<keyof Events, Set<Function>>} */
+      this.events = new Map();
+    }
+
+    /**
+     * @template {keyof Events} K
+     * @param {K} event
+     * @param {(...args: Events[K]) => void} handler
+     * @returns {() => void} unsubscribe
+     */
+    on(event, handler) {
+      let set = this.events.get(event);
+      if (!set) {
+        set = new Set();
+        this.events.set(event, set);
+      }
+      set.add(handler);
+
+      return () => this.off(event, handler);
+    }
+
+    /**
+     * @template {keyof Events} K
+     * @param {K} event
+     * @param {(...args: Events[K]) => void} handler
+     */
+    off(event, handler) {
+      const set = this.events.get(event);
+      if (!set) return;
+
+      set.delete(handler);
+
+      if (set.size === 0) {
+        this.events.delete(event);
+      }
+    }
+
+    /**
+     * @template {keyof Events} K
+     * @param {K} event
+     * @param {...Events[K]} args
+     */
+    emit(event, ...args) {
+      const set = this.events.get(event);
+      if (!set) return;
+
+      // 防止 emit 过程中修改
+      for (const fn of [...set]) {
+        fn(...args);
+      }
+    }
+
+    /**
+     * @template {keyof Events} K
+     * @param {K} event
+     * @param {(...args: Events[K]) => void} handler
+     * @returns {() => void}
+     */
+    once(event, handler) {
+      const wrap = (...args) => {
+        handler(...args);
+        this.off(event, wrap);
+      };
+
+      return this.on(event, wrap);
+    }
+
+    /**
+     * 清空某个事件或全部
+     * @param {keyof Events} [event]
+     */
+    clear(event) {
+      if (event) {
+        this.events.delete(event);
+      } else {
+        this.events.clear();
+      }
+    }
+
+    /**
+     * @template {any} T
+     * @param {keyof Events} event
+     * @param {((...args: Events[keyof Events]) => T) | null} getter
+     * @returns {T}
+     */
+    useEvent(event, getter) {
+      /**
+       * @type {import('preact/hooks')}
+       */
+      const { useState, useRef, useEffect } = requires?.htmPreact;
+      const [state, setState] = useState(getter || (() => null));
+      useEffect(() => {
+        const off = this.on(event, (...args) => {
+          if (getter) {
+            const next = getter?.(...args);
+            setState(next);
+          } else {
+            // state 只用第一个值
+            setState(args[0]);
+          }
+        });
+        return () => off();
+      }, []);
+      return state;
+    }
+  }
   // #endregion
 
   // #region 配置管理
@@ -210,7 +357,13 @@ const requires = this;
       filename_template: "`${nickname}_${short_id}_${tags}_${desc}`",
     };
     static global = new Config();
-    static listeners = new Set();
+
+    /**
+     * @type {Emitter<{
+     *    config_change: []
+     * }>}
+     */
+    events = new Emitter();
 
     features = {
       /**
@@ -312,9 +465,11 @@ const requires = this;
         },
       },
       /**
-       * 是否显示作者主页下载悬浮面板
+       * 是否开启作者页面下载器
+       *
+       * 默认关闭
        */
-      show_profile_panel: true,
+      enable_profile_downloader: false,
     };
 
     _key = "__douyin-dl-user-js__";
@@ -345,30 +500,11 @@ const requires = this;
 
     save() {
       localStorage.setItem(this._key, JSON.stringify(this.toJSON()));
-      Config._emit();
+      this.events.emit("config_change");
     }
 
     clone_features() {
       return JSON.parse(JSON.stringify(this.features));
-    }
-
-    static subscribe(listener) {
-      this.listeners.add(listener);
-      listener(this.global.clone_features());
-      return () => {
-        this.listeners.delete(listener);
-      };
-    }
-
-    static _emit() {
-      const snapshot = this.global.clone_features();
-      this.listeners.forEach((listener) => {
-        try {
-          listener(snapshot);
-        } catch (error) {
-          console.error("[dy-dl]配置订阅失败", error);
-        }
-      });
     }
   }
   // #endregion
@@ -425,17 +561,24 @@ const requires = this;
     static create_default(profile = {}) {
       return {
         version: 1,
+        /** @type {string} */
         profileKey: profile.profileKey || "",
+        /** @type {string} */
         secUid: profile.secUid || "",
+        /** @type {string} */
         profileName: profile.profileName || "",
+        /** @type {string} */
         tabKey: profile.tabKey || "post",
         status: "idle",
         createdAt: Date.now(),
         updatedAt: Date.now(),
         lastRunAt: 0,
         completedAt: 0,
+        /** @type {string[]} */
         knownIds: [],
+        /** @type {string[]} */
         downloadedIds: [],
+        /** @type {Record<string, object>} */
         failedItems: {},
       };
     }
@@ -2324,8 +2467,14 @@ const requires = this;
   // 配置 config modal
   // #region Config Modal Components
   const ConfigModalComponents = (() => {
-    const { useState, useEffect, useMemo } = requires?.htmPreact;
-    const { html } = requires?.htmPreact;
+    /**
+     * @type {import('preact/hooks')}
+     */
+    const { useState, useRef, useEffect, useMemo } = requires?.htmPreact;
+    /**
+     * @type {import('preact').h}
+     */
+    const html = requires?.htmPreact?.html;
 
     // 样式常量
     const styles = {
@@ -2398,9 +2547,9 @@ const requires = this;
       const [using_downloader, set_UsingDownloader] = useState(
         config.features.using_downloader || "browser"
       );
-      const [showProfilePanel, setShowProfilePanel] = useState(
-        config.features.show_profile_panel !== false
-      );
+      // const [showProfilePanel, setShowProfilePanel] = useState(
+      //   config.features.enable_profile_downloader !== false
+      // );
 
       // filename 实时刷新测试
       const filename_test = useMemo(() => {
@@ -2428,7 +2577,7 @@ const requires = this;
         config.features.image_resize_codecs = imageResize;
         config.features.image_quality = imageQuality;
         config.features.using_downloader = using_downloader;
-        config.features.show_profile_panel = showProfilePanel;
+        // config.features.enable_profile_downloader = showProfilePanel;
         config.save();
         alert("配置已保存");
       };
@@ -2456,21 +2605,6 @@ const requires = this;
             <div style="font-size: 12px; color: #666;">
               如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。
               <br />注意：使用外部下载器时，图片压缩转码功能不可用。
-            </div>
-          </fieldset>
-
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>悬浮面板</legend>
-            <div style=${styles.row}>
-              <label style=${styles.label}>作者主页面板：</label>
-              <input
-                type="checkbox"
-                checked=${showProfilePanel}
-                onChange=${(e) => setShowProfilePanel(e.target.checked)}
-              />
-            </div>
-            <div style="font-size: 12px; color: #666;">
-              用来控制作者主页右下角统一入口的显示。
             </div>
           </fieldset>
 
@@ -2924,52 +3058,65 @@ const requires = this;
 
   // #region Floating Action Panel
   const FloatingPanelComponents = (() => {
-    const { useEffect, useState } = requires?.htmPreact;
+    /**
+     * @type {import('preact/hooks')}
+     */
+    const { useState, useRef, useEffect, useMemo, useCallback } =
+      requires?.htmPreact;
+    /**
+     * @type {import('preact').h}
+     */
     const html = requires?.htmPreact?.html;
 
     const styles = {
-      panel: `
+      panel: ({ is_expand = false } = {}) => css`
         position: fixed;
         right: 24px;
-        bottom: 24px;
+        bottom: 80px;
         z-index: 999999;
         display: flex;
         flex-direction: column;
         gap: 12px;
-        min-width: 240px;
+        min-width: ${is_expand ? "240px" : ""};
         max-width: min(320px, calc(100vw - 32px));
         padding: 14px;
         border-radius: 16px;
         background: rgba(18, 18, 20, 0.94);
         color: #fff;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.22);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
         backdrop-filter: blur(10px);
         font-family: sans-serif;
       `,
-      section: `
+      section: css`
         display: flex;
         flex-direction: column;
         gap: 8px;
       `,
-      sectionHeader: `
+      sectionHeader: css`
         font-size: 12px;
-        color: rgba(255,255,255,0.7);
+        color: rgba(255, 255, 255, 0.7);
       `,
-      status: `
+      headerAction: css`
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.7);
+        float: right;
+        cursor: pointer;
+      `,
+      status: css`
         font-size: 13px;
         line-height: 1.5;
         white-space: pre-wrap;
       `,
-      button: `
+      button: css`
         border: none;
         border-radius: 10px;
         padding: 8px 12px;
         cursor: pointer;
-        background: rgba(255,255,255,0.12);
+        background: rgba(255, 255, 255, 0.12);
         color: #fff;
         font-size: 12px;
       `,
-      primaryButton: `
+      primaryButton: css`
         border: none;
         border-radius: 10px;
         padding: 8px 12px;
@@ -2978,67 +3125,114 @@ const requires = this;
         color: #fff;
         font-size: 12px;
       `,
-      buttonRow: `
+      buttonRow: css`
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
       `,
     };
 
+    /**
+     *
+     * @param {{mediaHandler: MediaHandler, profilePageHandler: ProfilePageHandler}} param0
+     * @returns
+     */
     const App = ({ mediaHandler, profilePageHandler }) => {
-      const [profileSnapshot, setProfileSnapshot] = useState(
-        profilePageHandler.getPanelSnapshot()
+      const profile_snapshot = profilePageHandler.downloadManager.useEvent(
+        "stateChanged",
+        () => profilePageHandler.downloadManager.getSnapshot()
       );
 
-      useEffect(() => {
-        return profilePageHandler.subscribe((nextSnapshot) => {
-          setProfileSnapshot(nextSnapshot);
+      const is_expand = Config.global.events.useEvent(
+        "config_change",
+        () => Config.global.features.enable_profile_downloader
+      );
+
+      const expand = useCallback(() => {
+        Config.global.features.enable_profile_downloader = true;
+        Config.global.save();
+      });
+      const collapse = useCallback(() => {
+        Config.global.features.enable_profile_downloader = false;
+        Config.global.save();
+      });
+
+      const open_settings = () => mediaHandler.open_config_modal();
+      // 打开批量下载管理器
+      const open_job_modal = () => profilePageHandler.open_job_modal();
+      // 开始下载
+      const start_download = () => {
+        // 根据所选内容下载
+        profilePageHandler.downloadManager.startJob().catch((err) => {
+          alert(`启动失败: ${err.message}`);
         });
-      }, [profilePageHandler]);
+      };
+      // 暂停下载
+      const pause_download = () => {
+        profilePageHandler.downloadManager.stopJob();
+      };
+      // 全选
+      const toggle_all = () => {
+        const selected = !profile_snapshot.counts.is_selected_all;
+        profilePageHandler.downloadManager.markSelectAll(selected);
+      };
 
-      useEffect(() => {
-        return Config.subscribe(() => {
-          setProfileSnapshot(profilePageHandler.getPanelSnapshot());
-        });
-      }, [profilePageHandler]);
-
-      const showProfileSection =
-        profileSnapshot.enabled &&
-        (profileSnapshot.isProfilePage || profileSnapshot.jobRunning);
-
-      if (!showProfileSection) {
-        return null;
-      }
+      const panel_body = html`
+        <div style=${styles.section}>
+          <div style=${styles.sectionHeader}>
+            <span>批量下载: ${profile_snapshot.profileName}</span>
+            <span style=${styles.headerAction} onClick=${collapse}>收起</span>
+            <span style="float:right;margin:0 2px;">|</span>
+            <span style=${styles.headerAction} onClick=${open_settings}
+              >设置</span
+            >
+          </div>
+          <div style=${styles.status}>${profile_snapshot.summary}</div>
+          <div style=${styles.buttonRow}>
+            <button
+              type="button"
+              style=${styles.primaryButton}
+              onClick=${open_job_modal}
+            >
+              ${"下载管理"}
+            </button>
+            ${!profile_snapshot.jobRunning
+              ? html` <button
+                    type="button"
+                    style=${styles.button}
+                    onClick=${toggle_all}
+                  >
+                    ${profile_snapshot.counts.is_selected_all
+                      ? "全不选"
+                      : "全选"}
+                  </button>
+                  <button
+                    type="button"
+                    style=${styles.button}
+                    onClick=${start_download}
+                  >
+                    ${"开始下载"}
+                  </button>`
+              : html`<button
+                  type="button"
+                  style=${styles.button}
+                  onClick=${pause_download}
+                >
+                  ${"暂停下载"}
+                </button>`}
+          </div>
+        </div>
+      `;
+      const expand_button = html`<span
+        style=${styles.headerAction}
+        onClick=${expand}
+      >
+        插件
+      </span>`;
 
       return html`
-        <div class="dy-dl-floating-panel" style=${styles.panel}>
-          ${showProfileSection
-            ? html`
-                <div style=${styles.section}>
-                  <div style=${styles.sectionHeader}>作者主页下载</div>
-                  <div style=${styles.status}>
-                    ${profileSnapshot.summary}
-                  </div>
-                  <div style=${styles.buttonRow}>
-                    <button
-                      type="button"
-                      style=${styles.primaryButton}
-                      onClick=${() =>
-                        profilePageHandler.open_profile_download_modal()}
-                    >
-                      ${profileSnapshot.jobRunning ? "查看任务" : "打开任务面板"}
-                    </button>
-                    <button
-                      type="button"
-                      style=${styles.button}
-                      onClick=${() => mediaHandler.open_config_modal()}
-                    >
-                      设置
-                    </button>
-                  </div>
-                </div>
-              `
-            : null}
+        <div class="dy-dl-floating-panel" style=${styles.panel({ is_expand })}>
+          ${is_expand ? panel_body : expand_button}
         </div>
       `;
     };
@@ -3057,10 +3251,13 @@ const requires = this;
       this.root = document.createElement("div");
       this.root.className = "dy-dl-floating-panel-root";
       document.body.appendChild(this.root);
-      this.render();
+
+      this.mounted = false;
     }
 
-    render() {
+    mount() {
+      if (this.mounted) return;
+
       const { html, render } = requires.htmPreact;
       const { App } = FloatingPanelComponents;
       render(
@@ -3735,32 +3932,11 @@ const requires = this;
   }
 
   // #region Profile Page Handler
-  class ProfilePageHandler {
+  class ProfileDataService {
     static FEED_CARD_SELECTOR =
       '.waterfall-videoCardContainer[href], [href*="/video/"][target="_blank"], [href*="/note/"][target="_blank"]';
 
-    /** @type {MediaHandler} */
-    mediaHandler;
     feedMediaCache = new Map();
-    listeners = new Set();
-    jobRunning = false;
-    jobStopRequested = false;
-    jobState = null;
-    taskModal = null;
-    taskTitle = null;
-    taskStatus = null;
-    taskHint = null;
-    taskActionButton = null;
-    taskStopButton = null;
-    taskResetButton = null;
-    taskSettingsButton = null;
-
-    /**
-     * @param {{mediaHandler: MediaHandler}} options
-     */
-    constructor(options) {
-      this.mediaHandler = options.mediaHandler;
-    }
 
     static findReactFiber(node) {
       let current = node;
@@ -3768,9 +3944,7 @@ const requires = this;
         const fiberKey = Object.keys(current).find((key) =>
           key.startsWith("__reactFiber$")
         );
-        if (fiberKey) {
-          return current[fiberKey];
-        }
+        if (fiberKey) return current[fiberKey];
         current = current.parentElement;
       }
       return null;
@@ -3781,123 +3955,8 @@ const requires = this;
       return match?.[1] || "";
     }
 
-    _set_text_content(node, text) {
-      if (!node) return;
-      if (node.textContent === text) return;
-      node.textContent = text;
-    }
-
-    subscribe(listener) {
-      this.listeners.add(listener);
-      listener(this.getPanelSnapshot());
-      return () => {
-        this.listeners.delete(listener);
-      };
-    }
-
-    getPanelSnapshot() {
-      const enabled = Config.global.features.show_profile_panel !== false;
-      const isProfilePage = this._is_profile_page();
-      const counts = this._get_profile_download_counts();
-      const profile =
-        !this.jobRunning && isProfilePage ? this._get_profile_context() : null;
-      const profileName =
-        this.jobState?.profileName || profile?.profileName || "当前作者主页";
-      const statusLabel = this.jobRunning
-        ? "进行中"
-        : this.jobState?.status === "completed"
-        ? "已完成"
-        : this.jobState?.status === "paused"
-        ? "已暂停"
-        : "待开始";
-
-      return {
-        enabled,
-        isProfilePage,
-        jobRunning: this.jobRunning,
-        profileName,
-        counts,
-        summary: !isProfilePage && !this.jobRunning
-          ? "仅在作者主页显示入口。"
-          : `${profileName}\n状态：${statusLabel}  已发现：${counts.known || 0}  已下载：${counts.downloaded || 0}  失败：${counts.failed || 0}`,
-      };
-    }
-
-    _notify_panel() {
-      const snapshot = this.getPanelSnapshot();
-      this.listeners.forEach((listener) => {
-        try {
-          listener(snapshot);
-        } catch (error) {
-          console.error("[dy-dl]作者主页面板订阅失败", error);
-        }
-      });
-    }
-
-    refresh() {
-      if (!this._is_profile_page()) {
-        if (this.jobRunning) {
-          this.stop_profile_download_job();
-        }
-        this._notify_panel();
-        return;
-      }
-      this._notify_panel();
-    }
-
-    _is_profile_page() {
-      return isProfilePagePath();
-    }
-
-    _get_profile_context() {
-      if (!this._is_profile_page()) return null;
-
-      const pathSecUid = location.pathname.replace(/^\/user\//, "").trim();
-      const scannedMedia = this._collect_current_feed_media().find(
-        (media) => media?.authorInfo?.secUid
-      );
-      const secUid =
-        pathSecUid && pathSecUid !== "self"
-          ? pathSecUid
-          : scannedMedia?.authorInfo?.secUid || pathSecUid || "";
-      const titleName = document.title.split("的抖音")[0]?.trim() || "";
-      const profileName = scannedMedia?.authorInfo?.nickname || titleName;
-      const activeTab = new URLSearchParams(location.search).get("showTab") || "post";
-      const profileKey = `${secUid || pathSecUid || "self"}:${activeTab}`;
-
-      return {
-        secUid,
-        profileName,
-        tabKey: activeTab,
-        profileKey,
-      };
-    }
-
-    _ensure_job_state(profile = this._get_profile_context()) {
-      if (!profile) {
-        this.jobState = null;
-        return null;
-      }
-      if (
-        !this.jobState ||
-        (!this.jobRunning && this.jobState.profileKey !== profile.profileKey)
-      ) {
-        this.jobState = ProfileDownloadState.load(profile.profileKey, profile);
-      }
-      return this.jobState;
-    }
-
-    _save_job_state() {
-      if (!this.jobState?.profileKey) return this.jobState;
-      this.jobState = ProfileDownloadState.save(
-        this.jobState.profileKey,
-        this.jobState
-      );
-      return this.jobState;
-    }
-
-    _extract_feed_media(card) {
-      let fiber = ProfilePageHandler.findReactFiber(card);
+    _extractFeedMedia(card) {
+      let fiber = ProfileDataService.findReactFiber(card);
       while (fiber) {
         const props = fiber.memoizedProps;
         const candidate =
@@ -3911,19 +3970,21 @@ const requires = this;
         fiber = fiber.return;
       }
 
-      const awemeId = ProfilePageHandler.getAwemeIdFromHref(
+      const awemeId = ProfileDataService.getAwemeIdFromHref(
         card.getAttribute("href")
       );
       return awemeId ? this.feedMediaCache.get(awemeId) || null : null;
     }
 
-    _collect_current_feed_media() {
+    collectCurrentFeedMedia() {
       const medias = [];
       const seen = new Set();
       document
-        .querySelectorAll(ProfilePageHandler.FEED_CARD_SELECTOR)
+        .querySelectorAll(ProfileDataService.FEED_CARD_SELECTOR)
         .forEach((card) => {
-          const media = this._extract_feed_media(/** @type {HTMLElement} */ (card));
+          const media = this._extractFeedMedia(
+            /** @type {HTMLElement} */ (card)
+          );
           if (!media?.awemeId || seen.has(media.awemeId)) return;
           seen.add(media.awemeId);
           this.feedMediaCache.set(media.awemeId, media);
@@ -3932,429 +3993,34 @@ const requires = this;
       return medias;
     }
 
-    _merge_profile_media_into_state(mediaList) {
-      if (!this.jobState) return;
-      const knownIds = new Set(this.jobState.knownIds || []);
-      (mediaList || []).forEach((media) => {
-        if (!media?.awemeId) return;
-        knownIds.add(media.awemeId);
-      });
-      this.jobState.knownIds = Array.from(knownIds);
+    isProfilePage() {
+      return isProfilePagePath(); // 外部工具函数
     }
 
-    _mark_profile_item_downloaded(media) {
-      if (!this.jobState || !media?.awemeId) return;
-      const downloadedIds = new Set(this.jobState.downloadedIds || []);
-      downloadedIds.add(media.awemeId);
-      this.jobState.downloadedIds = Array.from(downloadedIds);
-      if (this.jobState.failedItems?.[media.awemeId]) {
-        delete this.jobState.failedItems[media.awemeId];
-      }
+    getProfileContext() {
+      if (!this.isProfilePage()) return null;
+
+      const pathSecUid = location.pathname.replace(/^\/user\//, "").trim();
+      const scannedMedia = this.collectCurrentFeedMedia().find(
+        (media) => media?.authorInfo?.secUid
+      );
+      const secUid =
+        pathSecUid && pathSecUid !== "self"
+          ? pathSecUid
+          : scannedMedia?.authorInfo?.secUid || pathSecUid || "";
+      const titleName = document.title.split("的抖音")[0]?.trim() || "";
+      const profileName = scannedMedia?.authorInfo?.nickname || titleName;
+      const activeTab =
+        new URLSearchParams(location.search).get("showTab") || "post";
+      const profileKey = `${secUid || pathSecUid || "self"}:${activeTab}`;
+
+      return { secUid, profileName, tabKey: activeTab, profileKey };
     }
 
-    _mark_profile_item_failed(media, reason = "unknown") {
-      if (!this.jobState || !media?.awemeId) return;
-      const prev = this.jobState.failedItems?.[media.awemeId] || {};
-      this.jobState.failedItems = this.jobState.failedItems || {};
-      this.jobState.failedItems[media.awemeId] = {
-        count: Number(prev.count || 0) + 1,
-        reason,
-        updatedAt: Date.now(),
-        desc: media.desc || prev.desc || "",
-      };
-    }
-
-    _get_profile_download_counts() {
-      return {
-        known: this.jobState?.knownIds?.length || 0,
-        downloaded: this.jobState?.downloadedIds?.length || 0,
-        failed: Object.keys(this.jobState?.failedItems || {}).length,
-      };
-    }
-
-    open_profile_download_modal() {
-      if (!this._is_profile_page()) {
-        alert("[dy-dl]请先打开作者主页。");
-        return;
-      }
-
-      this._ensure_job_state();
-      if (this.taskModal?.overlay?.isConnected) {
-        this._render_task_modal();
-        return;
-      }
-
-      const modal = new Modal((root, overlay) => {
-        overlay.style.zIndex = "999999";
-        root.style.width = "520px";
-        root.style.maxWidth = "calc(100vw - 32px)";
-        root.style.padding = "0";
-        root.style.overflow = "hidden";
-
-        const container = document.createElement("div");
-        Object.assign(container.style, {
-          display: "flex",
-          flexDirection: "column",
-          gap: "14px",
-          padding: "20px",
-          fontFamily: "sans-serif",
-        });
-
-        const title = document.createElement("div");
-        Object.assign(title.style, {
-          fontSize: "18px",
-          fontWeight: "600",
-          color: "#111",
-        });
-
-        const status = document.createElement("div");
-        Object.assign(status.style, {
-          whiteSpace: "pre-wrap",
-          lineHeight: "1.6",
-          color: "#333",
-          fontSize: "14px",
-        });
-
-        const hint = document.createElement("div");
-        Object.assign(hint.style, {
-          color: "#666",
-          fontSize: "12px",
-          lineHeight: "1.6",
-        });
-
-        const actions = document.createElement("div");
-        Object.assign(actions.style, {
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "10px",
-        });
-
-        const buildButton = (label, bg = "#f3f4f6", color = "#111") => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = label;
-          Object.assign(button.style, {
-            border: "none",
-            borderRadius: "10px",
-            padding: "9px 14px",
-            cursor: "pointer",
-            background: bg,
-            color,
-            fontSize: "13px",
-          });
-          return button;
-        };
-
-        const actionButton = buildButton("开始全量", "#fe2c55", "#fff");
-        const stopButton = buildButton("停止");
-        const resetButton = buildButton("重置记录");
-        const settingsButton = buildButton("设置");
-        const closeButton = buildButton("关闭");
-
-        actionButton.addEventListener("click", () => {
-          this.start_profile_download_job();
-        });
-        stopButton.addEventListener("click", () => {
-          this.stop_profile_download_job();
-        });
-        resetButton.addEventListener("click", () => {
-          this.reset_profile_download_job_state();
-        });
-        settingsButton.addEventListener("click", () => {
-          this.mediaHandler.open_config_modal();
-        });
-        closeButton.addEventListener("click", () => {
-          modal.close();
-        });
-
-        actions.append(
-          actionButton,
-          stopButton,
-          resetButton,
-          settingsButton,
-          closeButton
-        );
-        container.append(title, status, hint, actions);
-        root.appendChild(container);
-
-        this.taskTitle = title;
-        this.taskStatus = status;
-        this.taskHint = hint;
-        this.taskActionButton = actionButton;
-        this.taskStopButton = stopButton;
-        this.taskResetButton = resetButton;
-        this.taskSettingsButton = settingsButton;
-      });
-
-      const closeModal = modal.close.bind(modal);
-      modal.close = () => {
-        closeModal();
-        if (this.taskModal === modal) {
-          this.taskModal = null;
-          this.taskTitle = null;
-          this.taskStatus = null;
-          this.taskHint = null;
-          this.taskActionButton = null;
-          this.taskStopButton = null;
-          this.taskResetButton = null;
-          this.taskSettingsButton = null;
-        }
-      };
-
-      this.taskModal = modal;
-      this._render_task_modal();
-    }
-
-    _render_task_modal() {
-      this._notify_panel();
-      if (!this.taskModal) return;
-
-      const isProfilePage = this._is_profile_page();
-      const profile =
-        !this.jobRunning && isProfilePage ? this._get_profile_context() : null;
-      if (profile) {
-        this._ensure_job_state(profile);
-      }
-
-      const counts = this._get_profile_download_counts();
-      const profileName =
-        this.jobState?.profileName || profile?.profileName || "当前作者主页";
-      const statusLabel = this.jobRunning
-        ? "进行中"
-        : this.jobState?.status === "completed"
-        ? "已完成"
-        : this.jobState?.status === "paused"
-        ? "已暂停"
-        : "待开始";
-
-      if (this.taskTitle) {
-        this._set_text_content(
-          this.taskTitle,
-          `作者主页下载任务 - ${profileName}`
-        );
-      }
-
-      if (this.taskStatus) {
-        if (!isProfilePage && !this.jobRunning) {
-          this._set_text_content(
-            this.taskStatus,
-            "请先打开作者主页，再开始全量下载。"
-          );
-        } else {
-          this._set_text_content(
-            this.taskStatus,
-            `状态：${statusLabel}\n已发现：${counts.known || 0}\n已下载：${counts.downloaded || 0}\n失败：${counts.failed || 0}`
-          );
-        }
-      }
-
-      if (this.taskHint) {
-        this._set_text_content(
-          this.taskHint,
-          this.jobRunning
-            ? "任务运行时会自动向下滚动当前作者主页并下载未处理作品。离开作者主页后任务会自动暂停。"
-            : "点击“开始全量”后会自动按当前作者主页的作品列表轮询下载；关闭弹窗不会丢失已记录的进度。"
-        );
-      }
-
-      if (this.taskActionButton) {
-        this._set_text_content(
-          this.taskActionButton,
-          counts.downloaded > 0 || counts.failed > 0
-            ? "继续/补漏"
-            : "开始全量"
-        );
-        this.taskActionButton.disabled = !isProfilePage || this.jobRunning;
-        this.taskActionButton.style.opacity =
-          !isProfilePage || this.jobRunning ? "0.6" : "1";
-      }
-
-      if (this.taskStopButton) {
-        this.taskStopButton.disabled = !this.jobRunning;
-        this.taskStopButton.style.opacity = this.jobRunning ? "1" : "0.6";
-      }
-
-      if (this.taskResetButton) {
-        this.taskResetButton.disabled = !isProfilePage;
-        this.taskResetButton.style.opacity = isProfilePage ? "1" : "0.6";
-      }
-
-      this._notify_panel();
-    }
-
-    stop_profile_download_job() {
-      this.jobStopRequested = true;
-      if (this.jobState?.profileKey) {
-        this.jobState.status = "paused";
-        this._save_job_state();
-      }
-      this._render_task_modal();
-    }
-
-    reset_profile_download_job_state() {
-      const profile = this._get_profile_context();
-      if (!profile) {
-        alert("[dy-dl]请先打开作者主页。");
-        return;
-      }
-      if (!confirm("确定清空当前作者主页的下载记录吗？")) {
-        return;
-      }
-      if (this.jobRunning) {
-        this.stop_profile_download_job();
-      }
-      ProfileDownloadState.reset(profile.profileKey);
-      this.jobState = ProfileDownloadState.create_default(profile);
-      this._render_task_modal();
-    }
-
-    async start_profile_download_job() {
-      if (!this._is_profile_page()) {
-        alert("[dy-dl]请在作者主页中使用全量下载。");
-        return;
-      }
-      if (this.jobRunning) {
-        return;
-      }
-      if (this.mediaHandler.downloading) {
-        alert("[dy-dl]当前已有下载任务在进行中，请稍后再试。");
-        return;
-      }
-
-      this.open_profile_download_modal();
-      const releaseLock = this.mediaHandler._flag_start_download();
-      this.jobRunning = true;
-      this.jobStopRequested = false;
-      this._render_task_modal();
-      try {
-        await this._run_profile_download_job_logic();
-      } finally {
-        this.jobRunning = false;
-        this.jobStopRequested = false;
-        releaseLock();
-        this._render_task_modal();
-      }
-    }
-
-    async _run_profile_download_job_logic() {
-      const profile = this._get_profile_context();
-      if (!profile) {
-        alert("[dy-dl]请先打开作者主页。");
-        return;
-      }
-
-      this._ensure_job_state(profile);
-      this.jobState.status = "running";
-      this.jobState.lastRunAt = Date.now();
-      this.jobState.completedAt = 0;
-      this._save_job_state();
-      this._render_task_modal();
-
-      const toastTarget = this.taskActionButton;
-      const toast = createToast(toastTarget, 0);
-      let idleRounds = 0;
-
-      while (!this.jobStopRequested) {
-        if (!this._is_profile_page()) {
-          this.jobStopRequested = true;
-          break;
-        }
-
-        const mediaList = this._collect_current_feed_media();
-        this._merge_profile_media_into_state(mediaList);
-        this._save_job_state();
-        this._render_task_modal();
-
-        const downloadedSet = new Set(this.jobState?.downloadedIds || []);
-        const pendingMedia = mediaList.filter(
-          (media) => media?.awemeId && !downloadedSet.has(media.awemeId)
-        );
-
-        if (pendingMedia.length > 0) {
-          idleRounds = 0;
-          for (let idx = 0; idx < pendingMedia.length; idx++) {
-            if (this.jobStopRequested) break;
-            const media = pendingMedia[idx];
-            const counts = this._get_profile_download_counts();
-            toast.update(
-              `作者全量 (${counts.downloaded + 1}/${counts.known || "?"}) ${
-                media.desc || media.awemeId
-              }`
-            );
-            const result = await this.mediaHandler._download_media_logic(media, {
-              toastTarget,
-              toast,
-              toastPrefix: "作者全量",
-              alertOnFail: false,
-              addHistory: true,
-            });
-
-            if (result?.ok) {
-              this._mark_profile_item_downloaded(media);
-            } else {
-              this._mark_profile_item_failed(
-                media,
-                result?.reason || "download_failed"
-              );
-            }
-            this._save_job_state();
-            this._render_task_modal();
-          }
-          continue;
-        }
-
-        toast.update(
-          `作者全量：已扫到 ${this.jobState?.knownIds?.length || 0} 个，继续向下检查...`
-        );
-        const beforeKnown = this.jobState?.knownIds?.length || 0;
-        const didScroll = await this._scroll_profile_page_once();
-        const afterMedia = this._collect_current_feed_media();
-        this._merge_profile_media_into_state(afterMedia);
-        this._save_job_state();
-        this._render_task_modal();
-
-        const foundNewMedia = (this.jobState?.knownIds?.length || 0) > beforeKnown;
-        if (!didScroll && !foundNewMedia) {
-          idleRounds++;
-        } else if (!foundNewMedia) {
-          idleRounds++;
-        } else {
-          idleRounds = 0;
-        }
-
-        if (idleRounds >= 3) {
-          break;
-        }
-      }
-
-      if (this.jobStopRequested) {
-        this.jobState.status = "paused";
-        this._save_job_state();
-        toast.update(
-          this._is_profile_page()
-            ? "作者全量下载已暂停"
-            : "已离开作者主页，任务已暂停",
-          3000
-        );
-      } else {
-        this.jobState.status = "completed";
-        this.jobState.completedAt = Date.now();
-        this._save_job_state();
-        const counts = this._get_profile_download_counts();
-        toast.update(
-          `作者全量完成：已下载 ${counts.downloaded} 个，失败 ${counts.failed} 个`,
-          5000
-        );
-        if (counts.failed > 0) {
-          alert(
-            `[dy-dl]作者主页全量下载完成，成功 ${counts.downloaded} 个，失败 ${counts.failed} 个。下次点击“继续/补漏”会跳过已下载作品。`
-          );
-        }
-      }
-    }
-
-    _find_profile_scroll_container() {
-      const firstCard = document.querySelector(ProfilePageHandler.FEED_CARD_SELECTOR);
+    _findScrollContainer() {
+      const firstCard = document.querySelector(
+        ProfileDataService.FEED_CARD_SELECTOR
+      );
       let current =
         firstCard instanceof HTMLElement ? firstCard.parentElement : null;
       while (current instanceof HTMLElement) {
@@ -4362,12 +4028,9 @@ const requires = this;
         const isScrollable =
           ["auto", "scroll", "overlay"].includes(style.overflowY) &&
           current.scrollHeight > current.clientHeight + 100;
-        if (isScrollable) {
-          return current;
-        }
+        if (isScrollable) return current;
         current = current.parentElement;
       }
-
       return (
         document.querySelector(".route-scroll-container") ||
         document.querySelector(".parent-route-container") ||
@@ -4376,8 +4039,8 @@ const requires = this;
       );
     }
 
-    async _scroll_profile_page_once() {
-      const container = this._find_profile_scroll_container();
+    async scrollPageOnce() {
+      const container = this._findScrollContainer();
       if (!container) return false;
 
       const isDocumentScroll =
@@ -4396,9 +4059,7 @@ const requires = this;
         maxTop
       );
 
-      if (nextTop <= beforeTop + 4) {
-        return false;
-      }
+      if (nextTop <= beforeTop + 4) return false;
 
       if (isDocumentScroll) {
         window.scrollTo({ top: nextTop, behavior: "smooth" });
@@ -4407,6 +4068,905 @@ const requires = this;
       }
       await new Promise((resolve) => setTimeout(resolve, 1200));
       return true;
+    }
+  }
+
+  /**
+   * 事件定义（供外部订阅）
+   * @typedef {{
+   *   stateChanged: [ProfileDownloadManager],
+   *   countsUpdated: [object],
+   *   jobStarted: [],
+   *   jobStopped: [],
+   *   jobCompleted: [],
+   * }} Events
+   */
+
+  /**
+   * @extends {Emitter<Events>}
+   */
+  class ProfileDownloadManager extends Emitter {
+    /** @type {MediaHandler} */
+    mediaHandler;
+    /** @type {ProfileDataService} */
+    dataService;
+
+    /**
+     * @type {ReturnType<typeof ProfileDownloadState["create_default"]> | null}
+     */
+    jobState = null;
+    jobRunning = false;
+    jobStopRequested = false;
+
+    /** @type {Set<string>} 选中的媒体 */
+    selectedIds = new Set();
+
+    collect_timer = null;
+
+    /**
+     * @param {{ mediaHandler: MediaHandler, dataService: ProfileDataService }} deps
+     */
+    constructor({ mediaHandler, dataService }) {
+      super();
+      this.mediaHandler = mediaHandler;
+      this.dataService = dataService;
+
+      const collect = throttle(this.collect.bind(this), 1000);
+      this.collect_timer = setInterval(collect, 5 * 1000);
+      window.addEventListener("wheel", collect, { passive: false });
+    }
+
+    collect() {
+      if (!this.dataService.isProfilePage()) return;
+      const prev = this.jobState?.knownIds.length || 0;
+      const mediaList = this.dataService.collectCurrentFeedMedia();
+      this.mergeMediaIntoState(mediaList);
+      const changed = (this.jobState?.knownIds.length || 0) - prev;
+      if (changed) {
+        this.emit("stateChanged");
+        this.emit("countsUpdated", this.getCounts());
+      }
+    }
+
+    // 确保 jobState 与当前页面 profile 匹配
+    _ensureJobState(profile = this.dataService.getProfileContext()) {
+      if (!profile) {
+        this.jobState = null;
+        return null;
+      }
+      if (
+        !this.jobState ||
+        (!this.jobRunning && this.jobState.profileKey !== profile.profileKey)
+      ) {
+        this.jobState = ProfileDownloadState.load(profile.profileKey, profile);
+      }
+      return this.jobState;
+    }
+
+    _saveJobState() {
+      if (!this.jobState?.profileKey) return this.jobState;
+      this.jobState = ProfileDownloadState.save(
+        this.jobState.profileKey,
+        this.jobState
+      );
+      return this.jobState;
+    }
+
+    mergeMediaIntoState(mediaList) {
+      if (!this.jobState) return;
+      const knownIds = new Set(this.jobState.knownIds || []);
+      mediaList.forEach((media) => {
+        if (media?.awemeId) knownIds.add(media.awemeId);
+      });
+      this.jobState.knownIds = Array.from(knownIds);
+    }
+
+    markDownloaded(media) {
+      if (!this.jobState || !media?.awemeId) return;
+      const downloadedIds = new Set(this.jobState.downloadedIds || []);
+      downloadedIds.add(media.awemeId);
+      this.jobState.downloadedIds = Array.from(downloadedIds);
+      if (this.jobState.failedItems?.[media.awemeId]) {
+        delete this.jobState.failedItems[media.awemeId];
+      }
+    }
+
+    markFailed(media, reason = "unknown") {
+      if (!this.jobState || !media?.awemeId) return;
+      const prev = this.jobState.failedItems?.[media.awemeId] || {};
+      this.jobState.failedItems = this.jobState.failedItems || {};
+      this.jobState.failedItems[media.awemeId] = {
+        count: Number(prev.count || 0) + 1,
+        reason,
+        updatedAt: Date.now(),
+        desc: media.desc || prev.desc || "",
+      };
+    }
+
+    markSelect(awemeId, selected) {
+      const changed = selected
+        ? !this.selectedIds.has(awemeId)
+        : this.selectedIds.has(awemeId);
+      if (selected) {
+        this.selectedIds.add(awemeId);
+      } else {
+        this.selectedIds.delete(awemeId);
+      }
+      if (changed) {
+        this.emit("stateChanged");
+        this.emit("countsUpdated", this.getCounts());
+      }
+    }
+
+    markSelectAll(selected) {
+      if (!selected) {
+        this.selectedIds.clear();
+      } else {
+        this.jobState?.knownIds?.forEach((awemeId) =>
+          this.selectedIds.add(awemeId)
+        );
+      }
+      this.emit("stateChanged");
+      this.emit("countsUpdated", this.getCounts());
+    }
+
+    isSelectAll() {
+      return this.selectedIds.size === this.jobState?.knownIds?.length;
+    }
+
+    _isFeedSelected(awemeId) {
+      return this.selectedIds.has(awemeId);
+    }
+
+    getCounts() {
+      return {
+        known: this.jobState?.knownIds?.length || 0,
+        downloaded: this.jobState?.downloadedIds?.length || 0,
+        failed: Object.keys(this.jobState?.failedItems || {}).length,
+        // 选中这个状态不做持久化
+        selected: this.selectedIds.size,
+        is_selected_all: this.isSelectAll(),
+      };
+    }
+
+    getSnapshot(profileNameFallback = "当前作者主页") {
+      const isProfilePage = this.dataService.isProfilePage();
+      const profile =
+        !this.jobRunning && isProfilePage
+          ? this.dataService.getProfileContext()
+          : null;
+      const profileName =
+        this.jobState?.profileName ||
+        profile?.profileName ||
+        profileNameFallback;
+      const statusLabel = this.jobRunning
+        ? "进行中"
+        : this.jobState?.status === "completed"
+        ? "已完成"
+        : this.jobState?.status === "paused"
+        ? "已暂停"
+        : "待开始";
+      const counts = this.getCounts();
+
+      return {
+        jobRunning: this.jobRunning,
+        profileName,
+        statusLabel,
+        counts,
+        summary: `${statusLabel} 选择/发现: ${counts.selected}/${counts.known}\n已下载: ${counts.downloaded} 失败: ${counts.failed}`,
+      };
+    }
+
+    // 重置状态
+    resetState() {
+      const profile = this.dataService.getProfileContext();
+      if (!profile) return false;
+      if (this.jobRunning) this.stopJob();
+      ProfileDownloadState.reset(profile.profileKey);
+      this.jobState = ProfileDownloadState.create_default(profile);
+      this.collect();
+      this.emit("stateChanged", this);
+      return true;
+    }
+
+    // 停止任务
+    stopJob() {
+      this.jobStopRequested = true;
+      if (this.jobState?.profileKey) {
+        this.jobState.status = "paused";
+        this._saveJobState();
+      }
+      this.emit("stateChanged", this);
+    }
+
+    // 启动下载循环（由外部调用，这里只做前置准备）
+    async startJob() {
+      if (!this.dataService.isProfilePage()) {
+        throw new Error("请在作者主页中使用全量下载。");
+      }
+      if (this.jobRunning) return;
+      if (this.mediaHandler.downloading) {
+        throw new Error("当前已有下载任务在进行中。");
+      }
+
+      const releaseLock = this.mediaHandler._flag_start_download();
+      this.jobRunning = true;
+      this.jobStopRequested = false;
+      this.emit("jobStarted");
+      this.emit("stateChanged", this);
+
+      try {
+        await this._runDownloadLoop();
+      } finally {
+        this.jobRunning = false;
+        this.jobStopRequested = false;
+        releaseLock();
+        this.emit("stateChanged", this);
+      }
+    }
+
+    async _runDownloadLoop() {
+      const profile = this.dataService.getProfileContext();
+      if (!profile) throw new Error("无法获取作者信息。");
+
+      this._ensureJobState(profile);
+      this.jobState.status = "running";
+      this.jobState.lastRunAt = Date.now();
+      this.jobState.completedAt = 0;
+      this._saveJobState();
+      this.emit("stateChanged", this);
+
+      // 获取所有选中但尚未成功下载的作品ID
+      const selectedIdsArray = Array.from(this.selectedIds);
+      const downloadedSet = new Set(this.jobState.downloadedIds || []);
+      const pendingIds = selectedIdsArray.filter(
+        (id) => !downloadedSet.has(id)
+      );
+
+      if (pendingIds.length === 0) {
+        this.jobState.status = "completed";
+        this.jobState.completedAt = Date.now();
+        this._saveJobState();
+        this.emit("jobCompleted");
+        this.emit("stateChanged", this);
+        return;
+      }
+
+      // 依次下载每个选中的作品
+      for (const awemeId of pendingIds) {
+        if (this.jobStopRequested) {
+          this.jobState.status = "paused";
+          this._saveJobState();
+          this.emit("stateChanged", this);
+          return;
+        }
+
+        // 从缓存中获取媒体对象
+        const media = this.dataService.feedMediaCache.get(awemeId);
+        if (!media) {
+          console.warn(`[dy-dl] 缓存中未找到作品 ${awemeId}，跳过`);
+          this.markFailed({ awemeId, desc: "未缓存" }, "cache_miss");
+          this._saveJobState();
+          this.emit("countsUpdated", this.getCounts());
+          continue;
+        }
+
+        // 执行下载（复用 mediaHandler 的下载逻辑）
+        const result = await this.mediaHandler._download_media_logic(media, {
+          toastTarget: null,
+          toast: { update: () => {} },
+          toastPrefix: "批量下载",
+          alertOnFail: false,
+          addHistory: true,
+        });
+
+        if (result?.ok) {
+          this.markDownloaded(media);
+        } else {
+          this.markFailed(media, result?.reason || "download_failed");
+        }
+
+        this._saveJobState();
+        this.emit("countsUpdated", this.getCounts());
+
+        // 可选：每下载一个后稍作延迟，避免请求过快
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      // 任务完成
+      this.jobState.status = "completed";
+      this.jobState.completedAt = Date.now();
+      this._saveJobState();
+      this.emit("jobCompleted");
+      this.emit("stateChanged", this);
+    }
+  }
+
+  // ========== 批量下载管理模态框 ==========
+  const ProfileJobModalComponents = (() => {
+    const { useState, useEffect, useMemo, useCallback } = requires?.htmPreact;
+    const html = requires?.htmPreact?.html;
+
+    // 深色主题样式
+    const styles = {
+      container: {
+        display: "flex",
+        flexDirection: "column",
+        height: "75vh",
+        width: "850px",
+        maxWidth: "95vw",
+        overflow: "hidden",
+        fontFamily: "sans-serif",
+        background: "rgba(18, 18, 20, 0.94)",
+        color: "#fff",
+        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.22)",
+        borderRadius: "16px",
+        backdropFilter: "blur(10px)",
+      },
+      header: {
+        padding: "18px 22px",
+        borderBottom: "1px solid rgba(255,255,255,0.1)",
+      },
+      title: {
+        fontSize: "18px",
+        fontWeight: "600",
+        margin: 0,
+        marginBottom: "10px",
+        color: "#fff",
+      },
+      stats: {
+        display: "flex",
+        gap: "24px",
+        fontSize: "13px",
+        color: "rgba(255,255,255,0.7)",
+      },
+      progressBarContainer: {
+        height: "6px",
+        background: "rgba(255,255,255,0.15)",
+        borderRadius: "3px",
+        marginTop: "14px",
+        overflow: "hidden",
+      },
+      progressBarFill: (percent) => ({
+        width: `${percent}%`,
+        height: "100%",
+        background: "#fe2c55",
+        transition: "width 0.2s",
+      }),
+      filterBar: {
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+        padding: "12px 22px",
+        borderBottom: "1px solid rgba(255,255,255,0.1)",
+        background: "rgba(0,0,0,0.2)",
+      },
+      filterButtonGroup: {
+        display: "flex",
+        gap: "6px",
+      },
+      filterButton: (active) => ({
+        padding: "5px 12px",
+        borderRadius: "16px",
+        border: "1px solid rgba(255,255,255,0.2)",
+        background: active ? "rgba(254,44,85,0.2)" : "transparent",
+        color: active ? "#fe2c55" : "rgba(255,255,255,0.8)",
+        fontSize: "12px",
+        cursor: "pointer",
+        transition: "0.2s",
+        fontWeight: active ? "500" : "normal",
+      }),
+      searchInput: {
+        flex: 1,
+        padding: "6px 14px",
+        borderRadius: "20px",
+        border: "1px solid rgba(255,255,255,0.2)",
+        background: "rgba(255,255,255,0.08)",
+        color: "#fff",
+        fontSize: "13px",
+        outline: "none",
+      },
+      actions: {
+        display: "flex",
+        gap: "10px",
+        padding: "12px 22px",
+        borderBottom: "1px solid rgba(255,255,255,0.1)",
+      },
+      button: (primary) => ({
+        padding: "7px 18px",
+        borderRadius: "20px",
+        border: primary ? "none" : "1px solid rgba(255,255,255,0.2)",
+        background: primary ? "#fe2c55" : "transparent",
+        color: primary ? "#fff" : "rgba(255,255,255,0.9)",
+        fontSize: "13px",
+        cursor: "pointer",
+        fontWeight: primary ? "500" : "normal",
+        transition: "0.2s",
+        backdropFilter: "blur(5px)",
+      }),
+      closeButton: {
+        position: "absolute",
+        top: "12px",
+        right: "12px",
+        background: "transparent",
+        color: "rgba(255,255,255,0.9)",
+        fontSize: "13px",
+        cursor: "pointer",
+      },
+      tableContainer: {
+        flex: 1,
+        overflowY: "auto",
+        padding: "0 22px 20px",
+        scrollbarWidth: "thin",
+        scrollbarColor: "rgba(255,255,255,0.3) rgba(0,0,0,0.2)",
+      },
+      table: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: "13px",
+        color: "#fff",
+      },
+      th: {
+        position: "sticky",
+        top: 0,
+        background: "rgba(18,18,20,0.98)",
+        padding: "10px 8px",
+        textAlign: "left",
+        borderBottom: "1px solid rgba(255,255,255,0.15)",
+        fontWeight: "600",
+        color: "rgba(255,255,255,0.8)",
+        fontSize: "12px",
+        backdropFilter: "blur(5px)",
+      },
+      td: {
+        padding: "10px 8px",
+        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        verticalAlign: "middle",
+      },
+      checkbox: {
+        width: "18px",
+        height: "18px",
+        cursor: "pointer",
+        accentColor: "#fe2c55",
+      },
+      cover: {
+        width: "48px",
+        height: "64px",
+        objectFit: "cover",
+        borderRadius: "4px",
+        background: "rgba(255,255,255,0.05)",
+      },
+      desc: {
+        maxWidth: "180px",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      },
+      typeBadge: {
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: "12px",
+        fontSize: "11px",
+        background: "rgba(255,255,255,0.1)",
+        color: "#fff",
+      },
+      statusBadge: (downloaded) => ({
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: "12px",
+        fontSize: "11px",
+        background: downloaded
+          ? "rgba(46,125,50,0.25)"
+          : "rgba(254,44,85,0.15)",
+        color: downloaded ? "#81c784" : "#ff8a80",
+        border: downloaded
+          ? "1px solid rgba(46,125,50,0.5)"
+          : "1px solid rgba(254,44,85,0.4)",
+      }),
+      footer: {
+        padding: "12px 22px",
+        borderTop: "1px solid rgba(255,255,255,0.1)",
+        textAlign: "right",
+        background: "rgba(0,0,0,0.2)",
+        color: "rgba(255,255,255,0.6)",
+        fontSize: "12px",
+      },
+    };
+
+    /**
+     *
+     * @param {{profilePageHandler: ProfilePageHandler, onClose: Function}} param0
+     * @returns
+     */
+    const App = ({ profilePageHandler, onClose }) => {
+      const { downloadManager, dataService } = profilePageHandler;
+      const [snapshot, setSnapshot] = useState(() =>
+        downloadManager.getSnapshot()
+      );
+      const [rawMediaList, setRawMediaList] = useState([]);
+      const [searchText, setSearchText] = useState("");
+
+      // 构建原始媒体列表
+      const buildMediaList = useCallback(() => {
+        const knownIds = downloadManager.jobState?.knownIds || [];
+        const items = knownIds
+          .map((id) => {
+            const media = dataService.feedMediaCache.get(id);
+            if (!media) return null;
+            const downloaded =
+              downloadManager.jobState?.downloadedIds?.includes(id) || false;
+            const failed = downloadManager.jobState?.failedItems?.[id];
+            return {
+              awemeId: id,
+              media,
+              downloaded,
+              failed,
+              selected: downloadManager.selectedIds.has(id),
+              // 判断类型：有 images 数组且长度 > 0 为图集，否则为视频
+              type: media.images && media.images.length > 0 ? "album" : "video",
+            };
+          })
+          .filter(Boolean)
+          .sort(
+            (a, b) => (b.media.createTime || 0) - (a.media.createTime || 0)
+          );
+        return items;
+      }, [downloadManager, dataService]);
+
+      // 刷新数据
+      const refreshData = useCallback(() => {
+        setSnapshot(downloadManager.getSnapshot());
+        setRawMediaList(buildMediaList());
+      }, [buildMediaList, downloadManager]);
+
+      // 订阅事件并定时刷新
+      useEffect(() => {
+        refreshData();
+        const unsubState = downloadManager.on("stateChanged", refreshData);
+        const unsubCounts = downloadManager.on("countsUpdated", refreshData);
+        const interval = setInterval(refreshData, 2000);
+        return () => {
+          unsubState();
+          unsubCounts();
+          clearInterval(interval);
+        };
+      }, [refreshData]);
+
+      // 搜索过滤
+      const filteredList = useMemo(() => {
+        if (!searchText.trim()) return rawMediaList;
+        const lowerSearch = searchText.toLowerCase().trim();
+        return rawMediaList.filter((item) => {
+          const desc = (item.media.desc || "").toLowerCase();
+          const id = String(item.awemeId).toLowerCase();
+          const shortId = MediaHandler.toShortId(item.awemeId).toLowerCase();
+          return (
+            desc.includes(lowerSearch) ||
+            id.includes(lowerSearch) ||
+            shortId.includes(lowerSearch)
+          );
+        });
+      }, [rawMediaList, searchText]);
+
+      // 获取过滤后的 ID 集合
+      const filteredIds = useMemo(
+        () => new Set(filteredList.map((item) => item.awemeId)),
+        [filteredList]
+      );
+
+      // 全选/全不选 (仅影响过滤后的项)
+      const handleSelectAllFiltered = (checked) => {
+        filteredList.forEach((item) => {
+          downloadManager.markSelect(item.awemeId, checked);
+        });
+      };
+
+      // 筛选按钮动作
+      const selectAllVideos = () => {
+        filteredList.forEach((item) => {
+          if (item.type === "video")
+            downloadManager.markSelect(item.awemeId, true);
+        });
+      };
+      const selectAllAlbums = () => {
+        filteredList.forEach((item) => {
+          if (item.type === "album")
+            downloadManager.markSelect(item.awemeId, true);
+        });
+      };
+      const deselectAllVideos = () => {
+        filteredList.forEach((item) => {
+          if (item.type === "video")
+            downloadManager.markSelect(item.awemeId, false);
+        });
+      };
+      const deselectAllAlbums = () => {
+        filteredList.forEach((item) => {
+          if (item.type === "album")
+            downloadManager.markSelect(item.awemeId, false);
+        });
+      };
+
+      // 处理单行选择
+      const handleSelectRow = (awemeId, checked) => {
+        downloadManager.markSelect(awemeId, checked);
+      };
+
+      // 任务控制
+      const handleStart = () => {
+        downloadManager.startJob().catch((err) => {
+          alert(`启动失败: ${err.message}`);
+        });
+      };
+      const handleStop = () => downloadManager.stopJob();
+      const handleReset = () => {
+        if (
+          confirm("确定重置当前作者的下载记录吗？这将清除已下载和失败记录。")
+        ) {
+          downloadManager.resetState();
+          refreshData();
+        }
+      };
+      const handleOpenSettings = () =>
+        profilePageHandler.mediaHandler.open_config_modal();
+
+      // 计算进度
+      const totalKnown = snapshot.counts.known;
+      const downloaded = snapshot.counts.downloaded;
+      const percent = totalKnown > 0 ? (downloaded / totalKnown) * 100 : 0;
+
+      // 判断过滤后是否全选
+      const filteredSelectedCount = filteredList.filter(
+        (item) => item.selected
+      ).length;
+      const isFilteredAllSelected =
+        filteredList.length > 0 &&
+        filteredSelectedCount === filteredList.length;
+
+      return html`
+        <div style=${styles.container}>
+          <!-- 头部：标题、统计、进度条 -->
+          <div style=${styles.header}>
+            <span style=${styles.closeButton} onClick=${onClose}> ✕ 关闭 </span>
+            <h3 style=${styles.title}>
+              📦 批量下载管理器 · ${snapshot.profileName || "当前作者"}
+            </h3>
+            <div style=${styles.stats}>
+              <span>📊 发现: ${totalKnown}</span>
+              <span>✅ 已下载: ${downloaded}</span>
+              <span>❌ 失败: ${snapshot.counts.failed}</span>
+              <span>☑️ 已选: ${snapshot.counts.selected}</span>
+              <span
+                >⚡ 状态:
+                ${snapshot.jobRunning
+                  ? "运行中"
+                  : snapshot.statusLabel || "待命"}</span
+              >
+            </div>
+            <div style=${styles.progressBarContainer}>
+              <div style=${styles.progressBarFill(percent)} />
+            </div>
+          </div>
+
+          <!-- 筛选栏：按钮组 + 搜索框 -->
+          <div style=${styles.filterBar}>
+            <div style=${styles.filterButtonGroup}>
+              <button
+                style=${styles.filterButton(false)}
+                onClick=${selectAllVideos}
+              >
+                🎬 全选视频
+              </button>
+              <button
+                style=${styles.filterButton(false)}
+                onClick=${selectAllAlbums}
+              >
+                🖼️ 全选图集
+              </button>
+              <button
+                style=${styles.filterButton(false)}
+                onClick=${deselectAllVideos}
+              >
+                🚫 取消视频
+              </button>
+              <button
+                style=${styles.filterButton(false)}
+                onClick=${deselectAllAlbums}
+              >
+                🚫 取消图集
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="🔍 搜索描述或ID..."
+              style=${styles.searchInput}
+              value=${searchText}
+              onInput=${(e) => setSearchText(e.target.value)}
+            />
+          </div>
+
+          <!-- 操作按钮栏 -->
+          <div style=${styles.actions}>
+            <button
+              style=${styles.button(true)}
+              onClick=${handleStart}
+              disabled=${snapshot.jobRunning}
+            >
+              ▶ 开始下载选中
+            </button>
+            <button
+              style=${styles.button(false)}
+              onClick=${handleStop}
+              disabled=${!snapshot.jobRunning}
+            >
+              ⏸️ 暂停
+            </button>
+            <button style=${styles.button(false)} onClick=${handleReset}>
+              🔄 重置记录
+            </button>
+            <button style=${styles.button(false)} onClick=${handleOpenSettings}>
+              ⚙️ 设置
+            </button>
+          </div>
+
+          <!-- 表格区域 -->
+          <div style=${styles.tableContainer}>
+            <table style=${styles.table}>
+              <thead>
+                <tr>
+                  <th style=${styles.th} width="40px">
+                    <input
+                      type="checkbox"
+                      style=${styles.checkbox}
+                      checked=${isFilteredAllSelected}
+                      onChange=${(e) =>
+                        handleSelectAllFiltered(e.target.checked)}
+                    />
+                  </th>
+                  <th style=${styles.th} width="60px">封面</th>
+                  <th style=${styles.th}>描述</th>
+                  <th style=${styles.th} width="80px">类型</th>
+                  <th style=${styles.th} width="100px">状态</th>
+                  <th style=${styles.th} width="120px">发布时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredList.map((item) => {
+                  const media = item.media;
+                  const coverUrl =
+                    media.video?.originCoverUrlList?.[1] ||
+                    media.video?.originCoverUrlList?.[0] ||
+                    media.images?.[0]?.urlList?.[0] ||
+                    "";
+                  const desc = media.desc || "(无描述)";
+                  const createDate = media.createTime
+                    ? new Date(media.createTime * 1000).toLocaleDateString()
+                    : "-";
+                  const typeLabel =
+                    item.type === "album" ? "📁 图集" : "🎬 视频";
+
+                  return html`
+                    <tr key=${item.awemeId}>
+                      <td style=${styles.td}>
+                        <input
+                          type="checkbox"
+                          style=${styles.checkbox}
+                          checked=${item.selected}
+                          onChange=${(e) =>
+                            handleSelectRow(item.awemeId, e.target.checked)}
+                        />
+                      </td>
+                      <td style=${styles.td}>
+                        ${coverUrl &&
+                        html`<img src=${coverUrl} style=${styles.cover} />`}
+                      </td>
+                      <td style=${styles.td}>
+                        <div style=${styles.desc} title=${desc}>${desc}</div>
+                        <div
+                          style="font-size:11px;color:rgba(255,255,255,0.5);"
+                        >
+                          ID: ${MediaHandler.toShortId(item.awemeId)}
+                        </div>
+                      </td>
+                      <td style=${styles.td}>
+                        <span style=${styles.typeBadge}>${typeLabel}</span>
+                      </td>
+                      <td style=${styles.td}>
+                        <span style=${styles.statusBadge(item.downloaded)}>
+                          ${item.downloaded
+                            ? "✅ 已下载"
+                            : item.failed
+                            ? `⚠️ 失败(${item.failed.count})`
+                            : "⏳ 待下载"}
+                        </span>
+                      </td>
+                      <td style=${styles.td}>${createDate}</td>
+                    </tr>
+                  `;
+                })}
+              </tbody>
+            </table>
+            ${filteredList.length === 0 &&
+            html`
+              <div
+                style="text-align:center;padding:40px;color:rgba(255,255,255,0.5);"
+              >
+                ${rawMediaList.length === 0
+                  ? "暂无作品数据，请先滚动主页加载作品。"
+                  : "没有匹配的搜索结果。"}
+              </div>
+            `}
+          </div>
+
+          <!-- 底部提示 -->
+          <div style=${styles.footer}>
+            提示：勾选作品后点击“开始下载”将按顺序下载选中作品。搜索仅作用于当前列表，筛选按钮仅影响过滤后的可见项。
+          </div>
+        </div>
+      `;
+    };
+
+    return { App };
+  })();
+
+  class ProfilePageHandler {
+    /** @type {MediaHandler} */
+    mediaHandler;
+    /** @type {ProfileDataService} */
+    dataService;
+    /** @type {ProfileDownloadManager} */
+    downloadManager;
+
+    /**
+     * @param {{ mediaHandler: MediaHandler }} options
+     */
+    constructor(options) {
+      this.mediaHandler = options.mediaHandler;
+      this.dataService = new ProfileDataService();
+      this.downloadManager = new ProfileDownloadManager({
+        mediaHandler: this.mediaHandler,
+        dataService: this.dataService,
+      });
+      this.floating_ui = new FloatingPanel({
+        mediaHandler,
+        profilePageHandler: this,
+      });
+    }
+
+    mount_ui() {
+      if (!this.dataService.isProfilePage()) {
+        return;
+      }
+      this.floating_ui.mount();
+
+      this.downloadManager._ensureJobState();
+    }
+
+    /**
+     * 用于展示进度以及提供控制
+     */
+    open_job_modal() {
+      this.downloadManager._ensureJobState();
+
+      const modal = new Modal((root, overlay) => {
+        overlay.style.zIndex = "999999";
+        // 设置模态框内容容器样式
+        root.style.padding = "0";
+        root.style.overflow = "hidden";
+        root.style.background = "transparent";
+        root.style.borderRadius = "12px";
+
+        const { html, render } = requires.htmPreact;
+        render(
+          html`<${ProfileJobModalComponents.App}
+            profilePageHandler=${this}
+            onClose=${() => modal.close()}
+          />`,
+          root
+        );
+      });
+
+      this.taskModal = modal;
     }
   }
   // #endregion
@@ -4426,6 +4986,8 @@ const requires = this;
     /** @type {MutationObserver} */
     observer;
 
+    feed_card_selector_cls = "dy-dl-feed-selector";
+
     /**
      * @param {{downloader: Downloader, mediaHandler: MediaHandler, videoHandler: VideoHandler, danmakuHandler: DanmakuHandler, profilePageHandler: ProfilePageHandler}} options
      */
@@ -4443,6 +5005,11 @@ const requires = this;
       this.danmakuHandler = danmakuHandler;
       this.profilePageHandler = profilePageHandler;
       this.observer = new MutationObserver(this._handleMutations.bind(this));
+
+      Config.global.events.on(
+        "config_change",
+        this._on_config_change.bind(this)
+      );
     }
 
     /**
@@ -4471,6 +5038,19 @@ const requires = this;
       const div = document.createElement("div");
       div.innerHTML = html.trim();
       return /** @type {HTMLElement} */ (div.children[0]);
+    }
+
+    _on_config_change() {
+      this._sync_feed_cards();
+    }
+
+    _sync_feed_cards() {
+      const feed_cards = document.body.querySelectorAll(
+        ProfileDataService.FEED_CARD_SELECTOR
+      );
+      for (const feed_card of feed_cards) {
+        this._handleProfileCard(feed_card);
+      }
     }
 
     /**
@@ -4512,10 +5092,20 @@ const requires = this;
             this._handleXgControl(/** @type {HTMLElement} */ (elementNode));
             return;
           }
+          if (elementNode.matches(ProfileDataService.FEED_CARD_SELECTOR)) {
+            this._handleProfileCard(elementNode);
+            return;
+          }
+          if (elementNode.localName === "li") {
+            const feed_cards = Array.from(
+              elementNode.querySelectorAll(
+                ProfileDataService.FEED_CARD_SELECTOR
+              )
+            );
+            feed_cards.forEach((dom) => this._handleProfileCard(dom));
+          }
         });
       });
-
-      this.profilePageHandler.refresh();
     }
 
     /**
@@ -4675,6 +5265,98 @@ const requires = this;
       }
     }
 
+    /**
+     *
+     * @param {HTMLElement} card
+     */
+    _handleProfileCard(card) {
+      const dom = card.querySelector("." + this.feed_card_selector_cls);
+      if (!Config.global.features.enable_profile_downloader) {
+        // remove
+        dom?.remove();
+        return;
+      } else if (dom) {
+        // pass 已经有了跳过
+        return;
+      }
+      // add
+      const media = this.profilePageHandler.dataService._extractFeedMedia(card);
+      const { awemeId } = media || {};
+      if (!awemeId) {
+        // 跳过
+        return;
+      }
+
+      const computedPosition = window.getComputedStyle(card).position;
+      if (!computedPosition || computedPosition === "static") {
+        card.style.position = "relative";
+      }
+
+      const badge = document.createElement("label");
+      badge.className = this.feed_card_selector_cls;
+      Object.assign(badge.style, {
+        position: "absolute",
+        top: "10px",
+        left: "10px",
+        zIndex: "5",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "6px",
+        padding: "6px 10px",
+        borderRadius: "999px",
+        background: "rgba(0,0,0,0.55)",
+        border: "1px solid rgba(255,255,255,0.25)",
+        color: "#fff",
+        fontSize: "12px",
+        fontFamily: "sans-serif",
+        cursor: "pointer",
+        userSelect: "none",
+      });
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "dy-dl-feed-checkbox";
+      checkbox.style.margin = "0";
+      checkbox.style.cursor = "pointer";
+      checkbox.checked =
+        this.profilePageHandler.downloadManager._isFeedSelected(awemeId);
+
+      const label = document.createElement("span");
+      label.className = "dy-dl-feed-select-label";
+      label.textContent = "选择";
+
+      const stopCardJump = (event) => {
+        event.stopPropagation();
+      };
+
+      ["click", "mousedown", "mouseup", "touchstart"].forEach((eventName) => {
+        badge.addEventListener(eventName, stopCardJump);
+      });
+
+      checkbox.addEventListener("change", (event) => {
+        event.stopPropagation();
+        this.profilePageHandler.downloadManager.markSelect(
+          awemeId,
+          checkbox.checked
+        );
+      });
+
+      badge.append(checkbox, label);
+      card.appendChild(badge);
+
+      const off = this.profilePageHandler.downloadManager.on(
+        "countsUpdated",
+        () => {
+          if (!badge.parentElement) {
+            off();
+            return;
+          }
+          checkbox.checked =
+            this.profilePageHandler.downloadManager._isFeedSelected(awemeId);
+        }
+      );
+    }
+
     startObserving() {
       this.observer.observe(document.body, {
         childList: true,
@@ -4686,7 +5368,6 @@ const requires = this;
         .forEach((controls) =>
           this._handleXgControl(/** @type {HTMLElement} */ (controls))
         );
-      this.profilePageHandler.refresh();
     }
   }
   // #endregion
@@ -5021,13 +5702,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const profilePageHandler = new ProfilePageHandler({
     mediaHandler,
   });
-  Config.subscribe(() => {
-    profilePageHandler.refresh();
-  });
-  new FloatingPanel({
-    mediaHandler,
-    profilePageHandler,
-  });
   const domPatcher = new DOMPatcher({
     downloader,
     mediaHandler,
@@ -5039,6 +5713,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
   mediaHandler.init(); // Starts player detection
   domPatcher.startObserving(); // Starts DOM observation and initial scan
+  // 尝试注入ui，可能放到dom patcher里面好点，但是这样够了，要是没有就刷新就完事了
+  profilePageHandler.mount_ui();
 
   // TODO: 支持自定义快捷键，没太想好怎么搞好点...
   hotkeyManager.addHotkey("m", () => mediaHandler.download_current_media());
