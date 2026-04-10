@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.3.13
+// @version         1.4.1
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
