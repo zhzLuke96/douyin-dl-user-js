@@ -3191,10 +3191,10 @@ const requires = this;
           <div style=${styles.buttonRow}>
             <button
               type="button"
-              style=${styles.primaryButton}
+              style=${styles.button}
               onClick=${open_job_modal}
             >
-              ${"下载管理"}
+              ${"管理"}
             </button>
             ${!profile_snapshot.jobRunning
               ? html` <button
@@ -3208,14 +3208,14 @@ const requires = this;
                   </button>
                   <button
                     type="button"
-                    style=${styles.button}
+                    style=${styles.primaryButton}
                     onClick=${start_download}
                   >
                     ${"开始下载"}
                   </button>`
               : html`<button
                   type="button"
-                  style=${styles.button}
+                  style=${styles.primaryButton}
                   onClick=${pause_download}
                 >
                   ${"暂停下载"}
@@ -4731,17 +4731,19 @@ const requires = this;
             <h3 style=${styles.title}>
               📦 批量下载管理器 · ${snapshot.profileName || "当前作者"}
             </h3>
-            <div style=${styles.stats}>
-              <span>📊 发现: ${totalKnown}</span>
-              <span>✅ 已下载: ${downloaded}</span>
-              <span>❌ 失败: ${snapshot.counts.failed}</span>
-              <span>☑️ 已选: ${snapshot.counts.selected}</span>
+            <h4>
               <span
                 >⚡ 状态:
                 ${snapshot.jobRunning
                   ? "运行中"
                   : snapshot.statusLabel || "待命"}</span
               >
+            </h4>
+            <div style=${styles.stats}>
+              <span>📊 发现: ${totalKnown}</span>
+              <span>✅ 已下载: ${downloaded}</span>
+              <span>❌ 失败: ${snapshot.counts.failed}</span>
+              <span>☑️ 已选: ${snapshot.counts.selected}</span>
             </div>
             <div style=${styles.progressBarContainer}>
               <div style=${styles.progressBarFill(percent)} />
