@@ -126,13 +126,19 @@
 
 在用户主页支持批量下载功能。右下角会出现【插件】悬浮按钮，点击即可展开批量下载过程。
 
-图 1
+<img width="440" height="428" alt="image" src="https://github.com/user-attachments/assets/05aa7ad2-70cb-4d25-87b2-711065a72ac2" />
+
+- 开始下载：点击则开始批量下载已选中未下载的视频
+- 全选：点击全选当前可见视频
+- 管理：打开下载管理器
+
+- 作品上的选择：点击可单选或取消作品。
 
 #### 批量下载管理器
 
 点击【管理】按钮可以打开批量下载管理器，其中可以搜索、筛选需要下载的内容。
 
-图 2
+<img width="834" height="711" alt="image" src="https://github.com/user-attachments/assets/5e41ea1d-0725-4ca3-8696-5180f680c7a0" />
 
 ## LICENSE
 
