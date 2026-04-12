@@ -2352,9 +2352,6 @@ const requires = this;
       media.stats?.shareCount
     )}</${KeyValue}>
       </fieldset>
-    `;
-
-    const AdvancedTab = ({ media }) => html`
       <fieldset style=${styles.fieldset}>
           <legend style=${styles.legend}>ID 信息</legend>
           <${Copyable} label="Aweme ID" value=${media.awemeId} />
@@ -2413,6 +2410,156 @@ const requires = this;
       `;
     };
 
+    const DanmakuTab = () => {
+      const [danmakuList, setDanmakuList] = useState([]);
+      const [loading, setLoading] = useState(false);
+
+      // 获取弹幕数据
+      const fetchDanmaku = () => {
+        try {
+          setLoading(true);
+          const player = mediaHandler.player;
+          if (!player || !player.danmaku || !player.danmaku.main) {
+            setDanmakuList([]);
+            return;
+          }
+          const rawData = player.danmaku.main.data || [];
+          // 格式化弹幕数据，添加序号和格式化时间
+          const formatted = rawData.map((item, idx) => ({
+            index: idx + 1,
+            startTime: item.start,
+            startTimeStr: msToAssTime(item.start),
+            text: item.text || "",
+            color: item.style?.color || "#FFFFFF",
+            fontSize: item.style?.fontSize || 20,
+            raw: item,
+            uid: item.user_id || 0,
+            score: item.score || 0,
+          }));
+          setDanmakuList(formatted);
+        } catch (err) {
+          console.error("获取弹幕失败", err);
+          setDanmakuList([]);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // 复制单条弹幕文本
+      const copySingleText = (text) => {
+        navigator.clipboard.writeText(text);
+        alert("已复制弹幕文本");
+      };
+
+      // 复制全部弹幕文本（每行一条）
+      const copyAllText = () => {
+        const allText = danmakuList.map((item) => item.text).join("\n");
+        navigator.clipboard.writeText(allText);
+        alert(`已复制 ${danmakuList.length} 条弹幕文本`);
+      };
+
+      // 复制全部弹幕 JSON
+      const copyAllJSON = () => {
+        const jsonStr = JSON.stringify(
+          danmakuList.map((item) => item.raw),
+          null,
+          2
+        );
+        navigator.clipboard.writeText(jsonStr);
+        alert("已复制弹幕 JSON 数据");
+      };
+
+      // 组件挂载和每次打开时刷新
+      useEffect(() => {
+        fetchDanmaku();
+      }, []);
+
+      return html`
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center;"
+          >
+            <h4 style="margin:0;">📝 弹幕列表 (${danmakuList.length}条)</h4>
+            <div style="display: flex; gap: 8px;">
+              <button
+                style=${styles.btn}
+                onClick=${fetchDanmaku}
+                disabled=${loading}
+              >
+                🔄 刷新
+              </button>
+              <button
+                style=${styles.btn}
+                onClick=${copyAllText}
+                disabled=${danmakuList.length === 0}
+              >
+                📋 复制全部文本
+              </button>
+              <button
+                style=${styles.btn}
+                onClick=${copyAllJSON}
+                disabled=${danmakuList.length === 0}
+              >
+                📋 复制 JSON
+              </button>
+            </div>
+          </div>
+          ${loading &&
+          html`<div style="text-align:center;padding:20px;">加载中...</div>`}
+          ${!loading &&
+          danmakuList.length === 0 &&
+          html`
+            <div style="text-align:center;padding:20px;color:#999;">
+              暂无弹幕数据，请确保正在播放一个视频且弹幕已加载。
+            </div>
+          `}
+          ${!loading &&
+          danmakuList.length > 0 &&
+          html`
+            <div
+              style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;"
+            >
+              <table style=${styles.table}>
+                <thead>
+                  <tr>
+                    <th style=${styles.th}>#</th>
+                    <th style=${styles.th}>时间</th>
+                    <th style=${styles.th}>UID</th>
+                    <th style=${styles.th}>内容</th>
+                    <th style=${styles.th}>评分</th>
+                    <th style=${styles.th}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${danmakuList.map(
+                    (item) => html`
+                      <tr key=${item.index}>
+                        <td style=${styles.td}>${item.index}</td>
+                        <td style=${styles.td}>${item.startTimeStr}</td>
+                        <td style=${styles.td}>${item.uid}</td>
+                        <td style=${styles.td} title=${item.text}>
+                          ${item.text}
+                        </td>
+                        <td style=${styles.td}>${item.score.toFixed(2)}</td>
+                        <td style=${styles.td}>
+                          <button
+                            style=${styles.btn}
+                            onClick=${() => copySingleText(item.text)}
+                          >
+                            复制
+                          </button>
+                        </td>
+                      </tr>
+                    `
+                  )}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      `;
+    };
+
     // --- 主入口组件 ---
     const App = ({ media, filenameBase }) => {
       const [activeTab, setActiveTab] = useState("media");
@@ -2421,7 +2568,7 @@ const requires = this;
         { id: "media", title: "媒体资源", Comp: MediaTab },
         { id: "author", title: "作者信息", Comp: AuthorTab },
         { id: "post", title: "作品信息", Comp: PostTab },
-        { id: "advanced", title: "高级信息", Comp: AdvancedTab },
+        { id: "danmaku", title: "弹幕列表", Comp: DanmakuTab },
         { id: "json", title: "JSON", Comp: JsonTab },
       ];
 
