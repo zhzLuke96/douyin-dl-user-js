@@ -3400,11 +3400,22 @@ const requires = this;
       document.body.appendChild(this.root);
 
       this.mounted = false;
+
+      // FIXME: 应该有更好的方法，一时想不出来，放dom patcher里面也不太对...反正可以用...
+      this.show_hide_timer = setInterval(() => {
+        const hit_video = document.querySelector("#sliderVideo");
+        if (hit_video) this.hide();
+        else this.show();
+      }, 1000);
     }
 
     mount() {
       if (this.mounted) return;
+      this.mounted = true;
 
+      /**
+       * @type {import('preact')}
+       */
       const { html, render } = requires.htmPreact;
       const { App } = FloatingPanelComponents;
       render(
@@ -3414,6 +3425,26 @@ const requires = this;
         />`,
         this.root
       );
+    }
+
+    unmount() {
+      if (!this.mounted) return;
+      this.mounted = false;
+      /**
+       * @type {import('preact')}
+       */
+      const { render } = requires.htmPreact;
+      render(null, this.root);
+    }
+
+    hide() {
+      if (!this.mounted) return;
+      this.root.hidden = true;
+    }
+
+    show() {
+      if (!this.mounted) return;
+      this.root.hidden = false;
     }
   }
 
