@@ -235,6 +235,159 @@ const requires = this;
       }
     };
   }
+
+  /**
+   * @typedef {Object.<string, string | number | CSSObject | null | false>} CSSObject
+   * 说明：
+   * - key: CSS 属性（camelCase）或选择器（如 'span', '&:hover', '.item', '> div'）
+   * - value:
+   *    - string | number → 样式值
+   *    - CSSObject → 嵌套样式
+   *    - null | false → 忽略（用于条件控制）
+   */
+
+  /**
+   * @typedef {CSSObject | Array<CSSObject | null | false>} CSSInput
+   */
+
+  /**
+   * 创建一个极简 CSS-in-JS 工具
+   *
+   * 特性：
+   * - 支持嵌套选择器（子元素 / 伪类 / &）
+   * - 支持数组合并（条件样式）
+   * - 自动生成 className（hash）
+   * - 自动去重（相同样式只插入一次）
+   *
+   * @returns {(input: CSSInput) => string} css 函数，返回 className
+   *
+   * @example
+   * const css = createCSS()
+   *
+   * const cls = css({
+   *   color: 'red',
+   *   fontSize: '14px'
+   * })
+   *
+   * el.className = cls
+   */
+  function createCSS() {
+    const style = document.createElement("style");
+    document.head.appendChild(style);
+    const sheet = style.sheet;
+
+    /** @type {Map<string, string>} */
+    const cache = new Map();
+
+    /** @param {string} s */
+    const kebab = (s) => s.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+
+    /** @param {string} s */
+    const hash = (s) => {
+      let h = 0,
+        i = s.length;
+      while (i) h = (h * 31 + s.charCodeAt(--i)) | 0;
+      return "c" + (h >>> 0).toString(36);
+    };
+
+    /**
+     * 合并输入（支持数组）
+     * @param {CSSInput} input
+     * @returns {CSSObject}
+     */
+    const merge = (input) =>
+      Array.isArray(input)
+        ? input.filter(Boolean).reduce((a, b) => Object.assign(a, merge(b)), {})
+        : input || {};
+
+    /**
+     * 构建 CSS 规则（递归）
+     * @param {string} selector
+     * @param {CSSObject} obj
+     */
+    function build(selector, obj) {
+      let body = "";
+
+      for (const k in obj) {
+        const v = obj[k];
+        if (v == null || v === false) continue;
+
+        if (typeof v === "object") {
+          const sel = k.includes("&")
+            ? k.replace(/&/g, selector)
+            : `${selector} ${k}`;
+
+          build(sel, /** @type {CSSObject} */ (v));
+        } else {
+          body += `${kebab(k)}:${v};`;
+        }
+      }
+
+      if (body) {
+        sheet.insertRule(`${selector}{${body}}`, sheet.cssRules.length);
+      }
+    }
+
+    /**
+     * 生成 className
+     * @param {CSSInput} input
+     * @returns {string}
+     *
+     * @example
+     * const cls = css({
+     *   color: 'red'
+     * })
+     */
+    return function css(input) {
+      const obj = merge(input);
+      const key = JSON.stringify(obj);
+
+      if (cache.has(key)) return cache.get(key);
+
+      const className = hash(key);
+      build(`.${className}`, obj);
+
+      cache.set(key, className);
+      return className;
+    };
+  }
+  // #endregion
+
+  // #region 主题样式
+  const theme = {
+    colors: {
+      primary: "#fe2c55",
+      primaryLight: "#ff8a80",
+      bgOverlay: "rgba(18, 18, 20, 0.94)",
+      bgNav: "rgba(0,0,0,0.2)",
+      bgFieldset: "rgba(0,0,0,0.2)",
+      borderLight: "rgba(255,255,255,0.1)",
+      borderMedium: "rgba(255,255,255,0.15)",
+      borderInput: "rgba(255,255,255,0.2)",
+      textPrimary: "#fff",
+      textSecondary: "rgba(255,255,255,0.8)",
+      textMuted: "rgba(255,255,255,0.6)",
+      textDim: "#999",
+    },
+    spacing: {
+      xs: "4px",
+      sm: "8px",
+      md: "12px",
+      lg: "16px",
+      xl: "20px",
+    },
+    borderRadius: {
+      sm: "8px",
+      md: "12px",
+      lg: "16px",
+      full: "20px",
+    },
+    fontSize: {
+      xs: "12px",
+      sm: "13px",
+    },
+    backdropBlur: "blur(10px)",
+  };
   // #endregion
 
   // #region 事件
@@ -1940,33 +2093,187 @@ const requires = this;
      */
     const html = requires?.htmPreact?.html;
 
-    // --- 样式常量 (CSS-in-JS) ---
+    // --- 初始化 CSS-in-JS 工具 ---
+    const css = createCSS();
+
+    // --- 生成所有样式类名（静态 + 动态变体）---
     const styles = {
-      container:
-        "display: flex; flex-direction: column; height: 80vh; overflow: hidden;",
-      nav: "display: flex; border-bottom: 1px solid #ccc; flex-shrink: 0; background: #f9f9f9;",
-      navBtn: (active) =>
-        `padding: 10px 15px; border: none; background: ${
-          active ? "#fff" : "transparent"
-        }; cursor: pointer; border-bottom: 2px solid ${
-          active ? "#007bff" : "transparent"
-        }; font-weight: ${active ? "bold" : "normal"}; color: ${
-          active ? "#007bff" : "#333"
-        }; outline: none; transition: all 0.2s;`,
-      content: "flex-grow: 1; overflow-y: auto; padding: 15px;",
-      fieldset:
-        "border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; padding: 10px;",
-      legend: "font-weight: bold; padding: 0 5px; color: #555;",
-      row: "display: flex; padding: 6px 0; font-size: 14px; border-bottom: 1px solid #f5f5f5; align-items: center;",
-      label: "width: 100px; flex-shrink: 0; color: #666; font-weight: 600;",
-      value: "flex-grow: 1; color: #333; word-break: break-all;",
-      btn: "padding: 2px 8px; font-size: 12px; cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px; margin-left: 5px;",
-      img: "max-width: 100px; max-height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid #eee;",
-      table:
-        "width: 100%; font-size: 12px; border-collapse: collapse; text-align: left;",
-      th: "border: 1px solid #ddd; padding: 6px; background: #f5f5f5;",
-      td: "border: 1px solid #ddd; padding: 6px;",
+      container: css({
+        display: "flex",
+        flexDirection: "column",
+        height: "80vh",
+        overflow: "hidden",
+        background: theme.colors.bgOverlay,
+        backdropFilter: theme.backdropBlur,
+        borderRadius: theme.borderRadius.lg,
+        color: theme.colors.textPrimary,
+      }),
+
+      nav: css({
+        display: "flex",
+        borderBottom: `1px solid ${theme.colors.borderLight}`,
+        background: theme.colors.bgNav,
+        flexShrink: 0,
+      }),
+
+      navBtnBase: css({
+        padding: `${theme.spacing.md} ${theme.spacing.xl}`,
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        borderBottom: `2px solid transparent`,
+        fontWeight: "normal",
+        color: theme.colors.textSecondary,
+        transition: "0.2s",
+      }),
+
+      navBtnActive: css({
+        background: "rgba(255,255,255,0.08)",
+        borderBottomColor: theme.colors.primary,
+        fontWeight: "bold",
+        color: theme.colors.primary,
+      }),
+
+      content: css({
+        flexGrow: 1,
+        overflowY: "auto",
+        padding: theme.spacing.xl,
+      }),
+
+      fieldset: css({
+        border: `1px solid ${theme.colors.borderMedium}`,
+        borderRadius: theme.borderRadius.md,
+        marginBottom: theme.spacing.xl,
+        padding: theme.spacing.lg,
+        background: theme.colors.bgFieldset,
+      }),
+
+      legend: css({
+        fontWeight: "bold",
+        padding: `0 ${theme.spacing.sm}`,
+        color: "rgba(255,255,255,0.9)",
+        background: "rgba(18,18,20,0.8)",
+        borderRadius: theme.borderRadius.full,
+        fontSize: theme.fontSize.sm,
+      }),
+
+      row: css({
+        display: "flex",
+        padding: `${theme.spacing.sm} 0`,
+        fontSize: theme.fontSize.sm,
+        borderBottom: `1px solid rgba(255,255,255,0.08)`,
+        alignItems: "center",
+      }),
+
+      label: css({
+        width: "100px",
+        flexShrink: 0,
+        color: theme.colors.textMuted,
+        fontWeight: 600,
+      }),
+
+      value: css({
+        flexGrow: 1,
+        color: theme.colors.textSecondary,
+        wordBreak: "break-all",
+      }),
+
+      btn: css({
+        padding: `${theme.spacing.xs} ${theme.spacing.md}`,
+        fontSize: theme.fontSize.xs,
+        cursor: "pointer",
+        border: `1px solid rgba(255,255,255,0.3)`,
+        background: "rgba(255,255,255,0.08)",
+        color: theme.colors.textPrimary,
+        borderRadius: theme.borderRadius.full,
+        marginLeft: theme.spacing.sm,
+        transition: "0.2s",
+      }),
+
+      img: css({
+        maxWidth: "100px",
+        maxHeight: "80px",
+        objectFit: "cover",
+        borderRadius: theme.borderRadius.sm,
+        border: `1px solid ${theme.colors.borderInput}`,
+      }),
+
+      table: css({
+        width: "100%",
+        fontSize: theme.fontSize.xs,
+        borderCollapse: "collapse",
+        background: "rgba(0,0,0,0.2)",
+        borderRadius: theme.borderRadius.sm,
+        overflow: "hidden",
+      }),
+
+      th: css({
+        border: `1px solid ${theme.colors.borderLight}`,
+        padding: theme.spacing.sm,
+        background: "rgba(0,0,0,0.4)",
+        textAlign: "left",
+        color: "rgba(255,255,255,0.9)",
+      }),
+
+      td: css({
+        border: `1px solid ${theme.colors.borderLight}`,
+        padding: theme.spacing.sm,
+        color: theme.colors.textSecondary,
+      }),
+
+      // 额外提取的辅助类（原内联样式）
+      flexRow: css({ display: "flex", gap: "15px", alignItems: "center" }),
+      flexWrap: css({ display: "flex", gap: "6px", flexWrap: "wrap" }),
+      imgCover: css({ width: "120px", borderRadius: "4px" }),
+      authorHeader: css({
+        display: "flex",
+        gap: "15px",
+        marginBottom: "20px",
+        alignItems: "center",
+      }),
+      jsonPre: css({
+        background: "rgba(0,0,0,0.3)",
+        padding: "10px",
+        overflow: "auto",
+        maxHeight: "100%",
+        fontSize: "12px",
+        wordBreak: "break-all",
+        whiteSpace: "pre-wrap",
+        border: `1px solid ${theme.colors.borderInput}`,
+        borderRadius: theme.borderRadius.sm,
+        cursor: "text",
+        color: "#ddd",
+      }),
+      danmakuContainer: css({
+        display: "flex",
+        flexDirection: "column",
+        gap: theme.spacing.md,
+      }),
+      danmakuHeader: css({
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }),
+      danmakuTitle: css({ margin: 0 }),
+      danmakuButtonGroup: css({ display: "flex", gap: theme.spacing.sm }),
+      danmakuEmpty: css({
+        textAlign: "center",
+        padding: theme.spacing.xl,
+        color: theme.colors.textDim,
+      }),
+      danmakuTableWrapper: css({
+        maxHeight: "500px",
+        overflowY: "auto",
+        border: "1px solid #ddd",
+        borderRadius: "4px",
+      }),
     };
+
+    // 辅助函数：根据 active 状态返回导航按钮类名
+    const navBtnClass = (active) =>
+      active
+        ? `${styles.navBtnBase} ${styles.navBtnActive}`
+        : styles.navBtnBase;
 
     // --- 辅助函数 ---
     const fmt = {
@@ -1975,13 +2282,26 @@ const requires = this;
       size: (s) => (s ? (s / 1024 / 1024).toFixed(2) + " MB" : "-"),
     };
 
+    // ms 转 ASS 时间格式 (HH:MM:SS.mm)
+    const msToAssTime = (ms) => {
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.floor((ms % 3600000) / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      const centiseconds = Math.floor((ms % 1000) / 10);
+      return `${hours.toString().padStart(2, "0")}:${minutes
+        .toString()
+        .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}.${centiseconds
+        .toString()
+        .padStart(2, "0")}`;
+    };
+
     // --- 原子组件 ---
 
     // 基础键值对
     const KeyValue = ({ label, children }) => html`
-      <div style=${styles.row}>
-        <strong style=${styles.label}>${label}</strong>
-        <span style=${styles.value}>${children || "-"}</span>
+      <div className=${styles.row}>
+        <strong className=${styles.label}>${label}</strong>
+        <span className=${styles.value}>${children || "-"}</span>
       </div>
     `;
 
@@ -1996,10 +2316,10 @@ const requires = this;
       };
       if (!value) return html`<${KeyValue} label=${label} />`;
       return html`
-        <div style=${styles.row}>
-          <strong style=${styles.label}>${label}</strong>
-          <span style=${styles.value}>${value}</span>
-          <button style=${styles.btn} onClick=${handleCopy}>
+        <div className=${styles.row}>
+          <strong className=${styles.label}>${label}</strong>
+          <span className=${styles.value}>${value}</span>
+          <button className=${styles.btn} onClick=${handleCopy}>
             ${copied ? "已复制" : "复制"}
           </button>
         </div>
@@ -2008,17 +2328,19 @@ const requires = this;
 
     // 表格组件
     const Table = ({ headers, rows }) => html`
-      <table style=${styles.table}>
+      <table className=${styles.table}>
         <thead>
           <tr>
-            ${headers.map((h) => html`<th style=${styles.th}>${h}</th>`)}
+            ${headers.map((h) => html`<th className=${styles.th}>${h}</th>`)}
           </tr>
         </thead>
         <tbody>
           ${rows.map(
             (row) =>
               html`<tr>
-                ${row.map((cell) => html`<td style=${styles.td}>${cell}</td>`)}
+                ${row.map(
+                  (cell) => html`<td className=${styles.td}>${cell}</td>`
+                )}
               </tr>`
           )}
         </tbody>
@@ -2049,43 +2371,6 @@ const requires = this;
         label: "PotPlayer",
         buildUrl: (url) => "potplayer://" + url,
       },
-      // {
-      //   key: "baiduyunguanjia",
-      //   label: "百度盘",
-      //   buildUrl: (url, { filename }) =>
-      //     `baiduyunguanjia://${encodeURIComponent(url)}`,
-      // },
-      // {
-      //   key: "qkclouddrive",
-      //   label: "夸克盘",
-      //   buildUrl: (url, { filename }) =>
-      //     `qkclouddrive://${encodeURIComponent(url)}`,
-      // },
-      // {
-      //   key: "fdm",
-      //   label: "fdm",
-      //   buildUrl: (url, { filename }) => `fdm://${encodeURIComponent(url)}`,
-      // },
-      // {
-      //   key: "idm",
-      //   label: "idm",
-      //   buildUrl: () => null,
-      //   action: async (url) => {
-      //     const input_filename = await mediaHandler._build_filename();
-      //     const { filename, isVideo, isImage, content_length } =
-      //       await mediaHandler.downloader.prepare_filename(url, input_filename);
-      //     const luncher = new DownloaderLauncher();
-      //     luncher.launchIDM(
-      //       url,
-      //       filename,
-      //       Number(content_length || ""),
-      //       {},
-      //       {
-      //         // TODO 增加配置
-      //       }
-      //     );
-      //   },
-      // },
       {
         key: "abdm",
         label: "abdm",
@@ -2111,20 +2396,25 @@ const requires = this;
      */
     const LaunchButtons = ({ url, launchers }) => {
       return html`
-        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <div className=${styles.flexWrap}>
           ${launchers.map((l) => {
             const href = l.buildUrl?.(url, {});
 
             if (l.action) {
               return html`
-                <button onClick=${() => l.action(url, {})}>${l.label}</button>
+                <button
+                  className=${styles.btn}
+                  onClick=${() => l.action(url, {})}
+                >
+                  ${l.label}
+                </button>
               `;
             }
 
             if (href) {
               return html`
                 <a href=${href} target="_blank">
-                  <button>${l.label}</button>
+                  <button className=${styles.btn}>${l.label}</button>
                 </a>
               `;
             }
@@ -2151,24 +2441,23 @@ const requires = this;
         const coverUrl =
           video.originCoverUrlList?.[1] || video.originCoverUrlList?.[0];
 
-        // 可以按需裁剪 launcher（例如视频才有 potplayer）
         const videoLaunchers = launchers;
 
         return html`
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>视频封面</legend>
-            <div style="display: flex; gap: 15px;">
-              <img src=${coverUrl} style="width: 120px; border-radius: 4px;" />
+          <fieldset className=${styles.fieldset}>
+            <legend className=${styles.legend}>视频封面</legend>
+            <div className=${styles.flexRow}>
+              <img src=${coverUrl} className=${styles.imgCover} />
               <div>
                 <p><strong>分辨率:</strong> ${video.width} × ${video.height}</p>
                 <div style="margin-top: 10px;">
-                  <a href=${coverUrl} target="_blank" style=${styles.btn}>
+                  <a href=${coverUrl} target="_blank" className=${styles.btn}>
                     新标签打开
                   </a>
                   <a
                     href=${coverUrl}
                     download=${`cover_${filenameBase}.jpeg`}
-                    style=${styles.btn}
+                    className=${styles.btn}
                   >
                     下载封面
                   </a>
@@ -2177,8 +2466,8 @@ const requires = this;
             </div>
           </fieldset>
 
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>视频源</legend>
+          <fieldset className=${styles.fieldset}>
+            <legend className=${styles.legend}>视频源</legend>
             <${Table}
               headers=${[
                 "清晰度",
@@ -2215,8 +2504,8 @@ const requires = this;
       const ImageSection = () => {
         if (!images?.length) return null;
         return html`
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>图集 (${images.length}P)</legend>
+          <fieldset className=${styles.fieldset}>
+            <legend className=${styles.legend}>图集 (${images.length}P)</legend>
             <${Table}
               headers=${["#", "类型", "预览", "分辨率", "大小", "下载"]}
               rows=${images.map((img, i) => {
@@ -2226,13 +2515,15 @@ const requires = this;
                   : img.urlList?.[0];
                 const dl = isVid
                   ? img.video.playAddr?.[0]?.src
-                  : // : img.downloadUrlList?.[0] || img.urlList?.[0];
-                    // downloadUrlList 里面是带有水印的原图... urlList里面是q75的压缩图，但是分辨率不压缩，所以用这个更好点
-                    img.urlList?.[0];
+                  : img.urlList?.[0];
                 return [
                   i + 1,
                   isVid ? "视频" : "图片",
-                  html`<img src=${thumb} style=${styles.img} loading="lazy" />`,
+                  html`<img
+                    src=${thumb}
+                    className=${styles.img}
+                    loading="lazy"
+                  />`,
                   isVid
                     ? `${img.video.width}×${img.video.height}`
                     : `${img.width}×${img.height}`,
@@ -2250,43 +2541,34 @@ const requires = this;
         if (!music) return null;
         const dl_url = music.playUrl?.urlList?.[0] || "";
         return html`
-              <fieldset style=${styles.fieldset}>
-                  <legend style=${styles.legend}>背景音乐</legend>
-                  <div style="display: flex; gap: 15px; align-items: center;">
-                      <img src=${
-                        music.coverThumb?.urlList?.[0]
-                      } style="width:60px; height:60px; border-radius:4px;" loading="lazy"/>
-                      <div style="flex:1">
-                          <${KeyValue} label="标题">${music.title}</${KeyValue}>
-                          <${KeyValue} label="作者">${
-          music.author
-        }</${KeyValue}>
-                          <${KeyValue} label="时长">${
-          music.duration
-        } 秒</${KeyValue}>
-                          ${
-                            dl_url &&
-                            html`<a
-                              href=${dl_url}
-                              target="_blank"
-                              style=${styles.btn}
-                              >下载</a
-                            >`
-                          }
-                          ${
-                            dl_url &&
-                            html`<audio
-                              controls
-                              preload="metadata"
-                              style="width:100%"
-                            >
-                              <source src=${dl_url} />
-                            </audio>`
-                          }
-                      </div>
-                  </div>
-              </fieldset>
-          `;
+          <fieldset className=${styles.fieldset}>
+            <legend className=${styles.legend}>背景音乐</legend>
+            <div className=${styles.flexRow}>
+              <img
+                src=${music.coverThumb?.urlList?.[0]}
+                style="width:60px; height:60px; border-radius:4px;"
+                loading="lazy"
+              />
+              <div style="flex:1">
+                <${KeyValue} label="标题">${music.title}</${KeyValue}>
+                <${KeyValue} label="作者">${music.author}</${KeyValue}>
+                <${KeyValue} label="时长">${music.duration} 秒</${KeyValue}>
+                ${
+                  dl_url &&
+                  html`<a href=${dl_url} target="_blank" className=${styles.btn}
+                    >下载</a
+                  >`
+                }
+                ${
+                  dl_url &&
+                  html`<audio controls preload="metadata" style="width:100%">
+                    <source src=${dl_url} />
+                  </audio>`
+                }
+              </div>
+            </div>
+          </fieldset>
+        `;
       };
 
       return html`
@@ -2301,76 +2583,78 @@ const requires = this;
     const AuthorTab = ({ author }) => {
       if (!author) return html`<div>无作者信息</div>`;
       return html`
-          <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
-              <img src=${
-                author.avatarThumb?.urlList?.[0]
-              } style="width: 80px; height: 80px; border-radius: 50%;" />
-              <div>
-                  <h3>${author.nickname}</h3>
-                  <a href="https://www.douyin.com/user/${
-                    author.secUid
-                  }" target="_blank" style=${styles.btn}>访问主页</a>
-              </div>
+        <div className=${styles.authorHeader}>
+          <img
+            src=${author.avatarThumb?.urlList?.[0]}
+            style="width: 80px; height: 80px; border-radius: 50%;"
+          />
+          <div>
+            <h3>${author.nickname}</h3>
+            <a
+              href="https://www.douyin.com/user/${author.secUid}"
+              target="_blank"
+              className=${styles.btn}
+              >访问主页</a
+            >
           </div>
-          <${KeyValue} label="认证">${
-        author.customVerify || author.enterpriseVerifyReason
-      }</${KeyValue}>
-          <${Copyable} label="UID" value=${author.uid} />
-          <${Copyable} label="SecUID" value=${author.secUid} />
-          <${KeyValue} label="粉丝数">${fmt.num(
+        </div>
+        <${KeyValue} label="认证"
+          >${author.customVerify || author.enterpriseVerifyReason}</${KeyValue}
+        >
+        <${Copyable} label="UID" value=${author.uid} />
+        <${Copyable} label="SecUID" value=${author.secUid} />
+        <${KeyValue} label="粉丝数">${fmt.num(
         author.followerCount
       )}</${KeyValue}>
-          <${KeyValue} label="获赞数">${fmt.num(
+        <${KeyValue} label="获赞数">${fmt.num(
         author.totalFavorited
       )}</${KeyValue}>
-        `;
+      `;
     };
 
     const PostTab = ({ media }) => html`
-      <fieldset style=${styles.fieldset}>
-          <legend style=${styles.legend}>描述</legend>
-          <div style="white-space: pre-wrap; line-height: 1.5;">${
-            media.desc || "无描述"
-          }</div>
+      <fieldset className=${styles.fieldset}>
+        <legend className=${styles.legend}>描述</legend>
+        <div style="white-space: pre-wrap; line-height: 1.5;">
+          ${media.desc || "无描述"}
+        </div>
       </fieldset>
-      <fieldset style=${styles.fieldset}>
-          <legend style=${styles.legend}>数据统计</legend>
-          <${KeyValue} label="发布时间">${fmt.ts(
-      media.createTime
-    )}</${KeyValue}>
-          <${Copyable} label="分享链接" value=${media.shareInfo?.shareUrl} />
-          <${KeyValue} label="点赞">${fmt.num(
+      <fieldset className=${styles.fieldset}>
+        <legend className=${styles.legend}>数据统计</legend>
+        <${KeyValue} label="发布时间">${fmt.ts(media.createTime)}</${KeyValue}>
+        <${Copyable} label="分享链接" value=${media.shareInfo?.shareUrl} />
+        <${KeyValue} label="点赞">${fmt.num(
       media.stats?.diggCount
     )}</${KeyValue}>
-          <${KeyValue} label="评论">${fmt.num(
+        <${KeyValue} label="评论">${fmt.num(
       media.stats?.commentCount
     )}</${KeyValue}>
-          <${KeyValue} label="收藏">${fmt.num(
+        <${KeyValue} label="收藏">${fmt.num(
       media.stats?.collectCount
     )}</${KeyValue}>
-          <${KeyValue} label="分享">${fmt.num(
+        <${KeyValue} label="分享">${fmt.num(
       media.stats?.shareCount
     )}</${KeyValue}>
       </fieldset>
-      <fieldset style=${styles.fieldset}>
-          <legend style=${styles.legend}>ID 信息</legend>
-          <${Copyable} label="Aweme ID" value=${media.awemeId} />
-          <${Copyable} label="Group ID" value=${media.groupId} />
+      <fieldset className=${styles.fieldset}>
+        <legend className=${styles.legend}>ID 信息</legend>
+        <${Copyable} label="Aweme ID" value=${media.awemeId} />
+        <${Copyable} label="Group ID" value=${media.groupId} />
       </fieldset>
-      <fieldset style=${styles.fieldset}>
-          <legend style=${styles.legend}>权限 / 状态</legend>
-          <${KeyValue} label="允许评论">${
-      media.awemeControl?.canComment ? "是" : "否"
-    }</${KeyValue}>
-          <${KeyValue} label="允许分享">${
-      media.awemeControl?.canShare ? "是" : "否"
-    }</${KeyValue}>
-          <${KeyValue} label="允许下载">${
-      media.download?.allowDownload ? "是" : "否"
-    }</${KeyValue}>
-          <${KeyValue} label="私密视频">${
-      media.isPrivate ? "是" : "否"
-    }</${KeyValue}>
+      <fieldset className=${styles.fieldset}>
+        <legend className=${styles.legend}>权限 / 状态</legend>
+        <${KeyValue} label="允许评论"
+          >${media.awemeControl?.canComment ? "是" : "否"}</${KeyValue}
+        >
+        <${KeyValue} label="允许分享"
+          >${media.awemeControl?.canShare ? "是" : "否"}</${KeyValue}
+        >
+        <${KeyValue} label="允许下载"
+          >${media.download?.allowDownload ? "是" : "否"}</${KeyValue}
+        >
+        <${KeyValue} label="私密视频"
+          >${media.isPrivate ? "是" : "否"}</${KeyValue}
+        >
       </fieldset>
     `;
 
@@ -2394,18 +2678,16 @@ const requires = this;
             maxHeight: "100%",
           }}
         >
-          <legend style=${styles.legend}>
+          <legend className=${styles.legend}>
             原始数据
-            <button onClick=${selectAll} style=${styles.btn}>全选</button>
-            <button onClick=${() => console.log(data)} style=${styles.btn}>
+            <button onClick=${selectAll} className=${styles.btn}>全选</button>
+            <button onClick=${() => console.log(data)} className=${styles.btn}>
               Console Log
             </button>
           </legend>
-          <pre
-            style="background:#f4f4f4; padding:10px; overflow:auto; max-height: 100%; font-size: 12px; word-break: break-all; white-space: pre-wrap; border: 1px solid #ddd; border-radius: 4px; cursor: text;"
-          >
-                  <code ref=${codeRef}>${JSON.stringify(data, null, 2)}</code>
-              </pre>
+          <pre className=${styles.jsonPre}>
+            <code ref=${codeRef}>${JSON.stringify(data, null, 2)}</code>
+          </pre>
         </fieldset>
       `;
     };
@@ -2414,7 +2696,6 @@ const requires = this;
       const [danmakuList, setDanmakuList] = useState([]);
       const [loading, setLoading] = useState(false);
 
-      // 获取弹幕数据
       const fetchDanmaku = () => {
         try {
           setLoading(true);
@@ -2424,7 +2705,6 @@ const requires = this;
             return;
           }
           const rawData = player.danmaku.main.data || [];
-          // 格式化弹幕数据，添加序号和格式化时间
           const formatted = rawData.map((item, idx) => ({
             index: idx + 1,
             startTime: item.start,
@@ -2445,20 +2725,17 @@ const requires = this;
         }
       };
 
-      // 复制单条弹幕文本
       const copySingleText = (text) => {
         navigator.clipboard.writeText(text);
         alert("已复制弹幕文本");
       };
 
-      // 复制全部弹幕文本（每行一条）
       const copyAllText = () => {
         const allText = danmakuList.map((item) => item.text).join("\n");
         navigator.clipboard.writeText(allText);
         alert(`已复制 ${danmakuList.length} 条弹幕文本`);
       };
 
-      // 复制全部弹幕 JSON
       const copyAllJSON = () => {
         const jsonStr = JSON.stringify(
           danmakuList.map((item) => item.raw),
@@ -2469,34 +2746,33 @@ const requires = this;
         alert("已复制弹幕 JSON 数据");
       };
 
-      // 组件挂载和每次打开时刷新
       useEffect(() => {
         fetchDanmaku();
       }, []);
 
       return html`
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          <div
-            style="display: flex; justify-content: space-between; align-items: center;"
-          >
-            <h4 style="margin:0;">📝 弹幕列表 (${danmakuList.length}条)</h4>
-            <div style="display: flex; gap: 8px;">
+        <div className=${styles.danmakuContainer}>
+          <div className=${styles.danmakuHeader}>
+            <h4 className=${styles.danmakuTitle}>
+              📝 弹幕列表 (${danmakuList.length}条)
+            </h4>
+            <div className=${styles.danmakuButtonGroup}>
               <button
-                style=${styles.btn}
+                className=${styles.btn}
                 onClick=${fetchDanmaku}
                 disabled=${loading}
               >
                 🔄 刷新
               </button>
               <button
-                style=${styles.btn}
+                className=${styles.btn}
                 onClick=${copyAllText}
                 disabled=${danmakuList.length === 0}
               >
                 📋 复制全部文本
               </button>
               <button
-                style=${styles.btn}
+                className=${styles.btn}
                 onClick=${copyAllJSON}
                 disabled=${danmakuList.length === 0}
               >
@@ -2505,45 +2781,43 @@ const requires = this;
             </div>
           </div>
           ${loading &&
-          html`<div style="text-align:center;padding:20px;">加载中...</div>`}
+          html`<div className=${styles.danmakuEmpty}>加载中...</div>`}
           ${!loading &&
           danmakuList.length === 0 &&
           html`
-            <div style="text-align:center;padding:20px;color:#999;">
+            <div className=${styles.danmakuEmpty}>
               暂无弹幕数据，请确保正在播放一个视频且弹幕已加载。
             </div>
           `}
           ${!loading &&
           danmakuList.length > 0 &&
           html`
-            <div
-              style="max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px;"
-            >
-              <table style=${styles.table}>
+            <div className=${styles.danmakuTableWrapper}>
+              <table className=${styles.table}>
                 <thead>
                   <tr>
-                    <th style=${styles.th}>#</th>
-                    <th style=${styles.th}>时间</th>
-                    <th style=${styles.th}>UID</th>
-                    <th style=${styles.th}>内容</th>
-                    <th style=${styles.th}>评分</th>
-                    <th style=${styles.th}>操作</th>
+                    <th className=${styles.th}>#</th>
+                    <th className=${styles.th}>时间</th>
+                    <th className=${styles.th}>UID</th>
+                    <th className=${styles.th}>内容</th>
+                    <th className=${styles.th}>评分</th>
+                    <th className=${styles.th}>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${danmakuList.map(
                     (item) => html`
                       <tr key=${item.index}>
-                        <td style=${styles.td}>${item.index}</td>
-                        <td style=${styles.td}>${item.startTimeStr}</td>
-                        <td style=${styles.td}>${item.uid}</td>
-                        <td style=${styles.td} title=${item.text}>
+                        <td className=${styles.td}>${item.index}</td>
+                        <td className=${styles.td}>${item.startTimeStr}</td>
+                        <td className=${styles.td}>${item.uid}</td>
+                        <td className=${styles.td} title=${item.text}>
                           ${item.text}
                         </td>
-                        <td style=${styles.td}>${item.score.toFixed(2)}</td>
-                        <td style=${styles.td}>
+                        <td className=${styles.td}>${item.score.toFixed(2)}</td>
+                        <td className=${styles.td}>
                           <button
-                            style=${styles.btn}
+                            className=${styles.btn}
                             onClick=${() => copySingleText(item.text)}
                           >
                             复制
@@ -2572,7 +2846,6 @@ const requires = this;
         { id: "json", title: "JSON", Comp: JsonTab },
       ];
 
-      // 映射当前组件需要的数据
       const getProps = (id) => {
         switch (id) {
           case "author":
@@ -2587,20 +2860,20 @@ const requires = this;
       const ActiveComp = tabs.find((t) => t.id === activeTab).Comp;
 
       return html`
-        <div style=${styles.container}>
-          <nav style=${styles.nav}>
+        <div className=${styles.container}>
+          <nav className=${styles.nav}>
             ${tabs.map(
               (t) => html`
                 <button
                   onClick=${() => setActiveTab(t.id)}
-                  style=${styles.navBtn(activeTab === t.id)}
+                  className=${navBtnClass(activeTab === t.id)}
                 >
                   ${t.title}
                 </button>
               `
             )}
           </nav>
-          <div style=${styles.content}>
+          <div className=${styles.content}>
             <${ActiveComp} ...${getProps(activeTab)} />
           </div>
         </div>
@@ -2623,39 +2896,208 @@ const requires = this;
      */
     const html = requires?.htmPreact?.html;
 
-    // 样式常量
-    const styles = {
-      container:
-        "display: flex; flex-direction: column; height: 70vh; width: 600px; overflow: hidden;",
-      nav: "display: flex; border-bottom: 1px solid #ccc; background: #f9f9f9;",
-      navBtn: (active) => `
-      padding: 10px 20px;
-      border: none;
-      background: ${active ? "#fff" : "transparent"};
-      cursor: pointer;
-      border-bottom: 2px solid ${active ? "#007bff" : "transparent"};
-      font-weight: ${active ? "bold" : "normal"};
-      color: ${active ? "#007bff" : "#333"};
-    `,
-      content: "flex-grow: 1; overflow-y: auto; padding: 20px;",
-      fieldset:
-        "border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; padding: 15px;",
-      legend: "font-weight: bold; padding: 0 5px; color: #555;",
-      row: "display: flex; align-items: center; margin-bottom: 12px;",
-      label: "width: 120px; flex-shrink: 0; color: #333;",
-      input:
-        "flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px;",
-      select:
-        "flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff;",
-      checkbox: "margin-right: 8px;",
-      btn: "padding: 6px 12px; background: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer;",
-      btnDanger:
-        "padding: 6px 12px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer;",
-      table: "width: 100%; font-size: 13px; border-collapse: collapse;",
-      th: "border: 1px solid #ddd; padding: 8px; background: #f5f5f5; text-align: left;",
-      td: "border: 1px solid #ddd; padding: 8px; word-break: break-all;",
-      range: "flex: 1; margin-right: 10px;",
-      rangeValue: "width: 40px; text-align: center;",
+    const cssFn = createCSS();
+
+    const classNames = {
+      // 容器
+      container: cssFn({
+        display: "flex",
+        flexDirection: "column",
+        height: "70vh",
+        width: "600px",
+        overflow: "hidden",
+        background: theme.colors.bgOverlay,
+        backdropFilter: theme.backdropBlur,
+        borderRadius: theme.borderRadius.lg,
+        color: theme.colors.textPrimary,
+      }),
+
+      // 导航栏
+      nav: cssFn({
+        display: "flex",
+        borderBottom: `1px solid ${theme.colors.borderLight}`,
+        background: theme.colors.bgNav,
+      }),
+
+      navBtn: cssFn({
+        padding: "10px 20px",
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        borderBottom: `2px solid transparent`,
+        fontWeight: "normal",
+        color: theme.colors.textSecondary,
+        transition: "0.2s",
+        "&:hover": {
+          background: "rgba(255,255,255,0.05)",
+        },
+      }),
+
+      navBtnActive: cssFn({
+        background: "rgba(255,255,255,0.08)",
+        borderBottomColor: theme.colors.primary,
+        fontWeight: "bold",
+        color: theme.colors.primary,
+      }),
+
+      // 内容区
+      content: cssFn({
+        flexGrow: 1,
+        overflowY: "auto",
+        padding: theme.spacing.xl,
+      }),
+
+      // 表单区块
+      fieldset: cssFn({
+        border: `1px solid ${theme.colors.borderMedium}`,
+        borderRadius: theme.borderRadius.md,
+        marginBottom: theme.spacing.xl,
+        padding: theme.spacing.lg,
+        background: theme.colors.bgFieldset,
+      }),
+
+      legend: cssFn({
+        fontWeight: "bold",
+        padding: `0 ${theme.spacing.sm}`,
+        color: "rgba(255,255,255,0.9)",
+        background: "rgba(18,18,20,0.8)",
+        borderRadius: theme.borderRadius.full,
+        fontSize: theme.fontSize.sm,
+      }),
+
+      row: cssFn({
+        display: "flex",
+        alignItems: "center",
+        marginBottom: "14px",
+      }),
+
+      label: cssFn({
+        width: "120px",
+        flexShrink: 0,
+        color: "rgba(255,255,255,0.85)",
+        fontSize: theme.fontSize.sm,
+      }),
+
+      // 输入框基础样式
+      inputBase: cssFn({
+        flex: 1,
+        padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+        background: "rgba(255,255,255,0.08)",
+        border: `1px solid ${theme.colors.borderInput}`,
+        borderRadius: theme.borderRadius.sm,
+        color: theme.colors.textPrimary,
+        fontSize: theme.fontSize.sm,
+        outline: "none",
+        transition: "0.2s",
+        "&:focus": {
+          borderColor: theme.colors.primary,
+        },
+      }),
+
+      select: cssFn({
+        flex: 1,
+        padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+        background: "rgba(255,255,255,0.08)",
+        border: `1px solid ${theme.colors.borderInput}`,
+        borderRadius: theme.borderRadius.sm,
+        color: theme.colors.textPrimary,
+        fontSize: theme.fontSize.sm,
+        outline: "none",
+        cursor: "pointer",
+        // select 的 option 样式（优化）
+        "& option": {
+          background: "#2c2c2e",
+          color: theme.colors.textPrimary,
+          padding: theme.spacing.sm,
+        },
+      }),
+
+      checkbox: cssFn({
+        marginRight: theme.spacing.sm,
+        accentColor: theme.colors.primary,
+      }),
+
+      btn: cssFn({
+        padding: `6px 16px`,
+        background: theme.colors.primary,
+        color: theme.colors.textPrimary,
+        border: "none",
+        borderRadius: theme.borderRadius.full,
+        cursor: "pointer",
+        fontSize: theme.fontSize.xs,
+        transition: "0.2s",
+        "&:hover": {
+          filter: "brightness(1.1)",
+        },
+      }),
+
+      btnDanger: cssFn({
+        padding: `6px 16px`,
+        background: "rgba(254,44,85,0.2)",
+        color: theme.colors.primaryLight,
+        border: `1px solid rgba(254,44,85,0.5)`,
+        borderRadius: theme.borderRadius.full,
+        cursor: "pointer",
+        fontSize: theme.fontSize.xs,
+        "&:hover": {
+          background: "rgba(254,44,85,0.3)",
+        },
+      }),
+
+      table: cssFn({
+        width: "100%",
+        fontSize: theme.fontSize.sm,
+        borderCollapse: "collapse",
+      }),
+
+      th: cssFn({
+        border: `1px solid ${theme.colors.borderLight}`,
+        padding: theme.spacing.sm,
+        background: "rgba(0,0,0,0.3)",
+        textAlign: "left",
+        color: "rgba(255,255,255,0.9)",
+      }),
+
+      td: cssFn({
+        border: `1px solid ${theme.colors.borderLight}`,
+        padding: theme.spacing.sm,
+        color: theme.colors.textSecondary,
+      }),
+
+      range: cssFn({
+        flex: 1,
+        marginRight: "10px",
+      }),
+
+      rangeValue: cssFn({
+        width: "40px",
+        textAlign: "center",
+        color: theme.colors.textPrimary,
+      }),
+
+      // 辅助布局
+      flexBetween: cssFn({
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: "15px",
+      }),
+
+      hintText: cssFn({
+        fontSize: theme.fontSize.xs,
+        color: theme.colors.textDim,
+        marginTop: "5px",
+      }),
+
+      codeBlock: cssFn({
+        fontSize: theme.fontSize.xs,
+        background: "rgba(0,0,0,0.4)",
+        padding: "2px 4px",
+        borderRadius: "4px",
+      }),
+
+      hr: cssFn({
+        margin: `${theme.spacing.sm} 0`,
+      }),
     };
 
     /**
@@ -2718,7 +3160,6 @@ const requires = this;
         config.features.filename_max_length = filename_len;
         config.features.download_video_mode = videoMode;
         config.features.convert_webp_to_png = convertWebP;
-        // 保存新增配置项
         config.features.video_download_codecs = videoCodec;
         config.features.image_convert_codecs = imageConvertCodec;
         config.features.image_resize_codecs = imageResize;
@@ -2731,16 +3172,21 @@ const requires = this;
 
       return html`
         <div>
-          <div style="text-align: right;">
-            <button style=${styles.btn} onClick=${handleSave}>保存设置</button>
+          <div
+            className=${classNames.flexBetween}
+            style="justify-content: flex-end;"
+          >
+            <button className=${classNames.btn} onClick=${handleSave}>
+              保存设置
+            </button>
           </div>
 
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>下载器配置</legend>
-            <div style=${styles.row}>
-              <label style=${styles.label}>下载器：</label>
+          <fieldset className=${classNames.fieldset}>
+            <legend className=${classNames.legend}>下载器配置</legend>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>下载器：</label>
               <select
-                style=${styles.select}
+                className=${classNames.select}
                 value=${using_downloader}
                 onChange=${(e) => set_UsingDownloader(e.target.value)}
               >
@@ -2749,53 +3195,60 @@ const requires = this;
                 <option value="aria2">Aria2</option>
               </select>
             </div>
-            <div style="font-size: 12px; color: #666;">
+            <div className=${classNames.hintText}>
               如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。
               <br />注意：使用外部下载器时，图片压缩转码功能不可用。
             </div>
           </fieldset>
 
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>文件命名</legend>
-            <div style=${styles.row}>
-              <label style=${styles.label}>模板：</label>
+          <fieldset className=${classNames.fieldset}>
+            <legend className=${classNames.legend}>文件命名</legend>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>模板：</label>
               <input
                 type="text"
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${filenameTemplate}
                 onInput=${(e) => setFilenameTemplate(e.target.value)}
                 placeholder=${`例：\${nickname}_\${short_id}`}
               />
             </div>
-            <div style="font-size: 12px; color: #666; margin-top: 5px;">
-              可用变量：<code>nickname</code>, <code>short_id</code>,
-              <code>tags</code>, <code>desc</code>, <code>aweme_id</code>,
-              <code>create_date_YYYYMMDD</code>,
-              <code>now_YYYYMMDD_HHmmss</code> 等。
+            <div className=${classNames.hintText} style="margin-top: 5px;">
+              可用变量：<code className=${classNames.codeBlock}>nickname</code>,
+              <code className=${classNames.codeBlock}>short_id</code>,
+              <code className=${classNames.codeBlock}>tags</code>,
+              <code className=${classNames.codeBlock}>desc</code>,
+              <code className=${classNames.codeBlock}>aweme_id</code>,
+              <code className=${classNames.codeBlock}>create_date_YYYYMMDD</code
+              >,
+              <code className=${classNames.codeBlock}>now_YYYYMMDD_HHmmss</code>
+              等。
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>文件名长度：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>文件名长度：</label>
               <input
                 type="number"
                 max=${128}
                 min=${12}
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${filename_len}
                 onInput=${(e) => set_filename_len(e.target.value)}
               />
             </div>
-            <div style="font-size: 12px; color: #666; margin-top: 5px;">
-              <hr />
-              当前文件名：<code>${filename_test}</code>
+            <div className=${classNames.hintText} style="margin-top: 5px;">
+              <hr className=${classNames.hr} />
+              当前文件名：<code className=${classNames.codeBlock}
+                >${filename_test}</code
+              >
             </div>
           </fieldset>
 
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>视频下载设置</legend>
-            <div style=${styles.row}>
-              <label style=${styles.label}>分辨率策略：</label>
+          <fieldset className=${classNames.fieldset}>
+            <legend className=${classNames.legend}>视频下载设置</legend>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>分辨率策略：</label>
               <select
-                style=${styles.select}
+                className=${classNames.select}
                 value=${videoMode}
                 onChange=${(e) => setVideoMode(e.target.value)}
               >
@@ -2812,10 +3265,10 @@ const requires = this;
                 <option value="4K">4K</option>
               </select>
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>编码偏好：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>编码偏好：</label>
               <select
-                style=${styles.select}
+                className=${classNames.select}
                 value=${videoCodec}
                 onChange=${(e) => setVideoCodec(e.target.value)}
               >
@@ -2826,17 +3279,17 @@ const requires = this;
                 <option value="h265_prefer">优先 H265</option>
               </select>
             </div>
-            <div style="font-size: 12px; color: #666;">
+            <div className=${classNames.hintText}>
               注意：实际下载时根据可用地址匹配，若不支持所选编码或分辨率则回退。
             </div>
           </fieldset>
 
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>图片下载设置</legend>
-            <div style=${styles.row}>
-              <label style=${styles.label}>转码编码偏好：</label>
+          <fieldset className=${classNames.fieldset}>
+            <legend className=${classNames.legend}>图片下载设置</legend>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>转码编码偏好：</label>
               <select
-                style=${styles.select}
+                className=${classNames.select}
                 value=${imageConvertCodec}
                 onChange=${(e) => setImageConvertCodec(e.target.value)}
               >
@@ -2846,10 +3299,10 @@ const requires = this;
                 <option value="webp">转码为 WebP</option>
               </select>
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>尺寸压缩偏好：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>尺寸压缩偏好：</label>
               <select
-                style=${styles.select}
+                className=${classNames.select}
                 value=${imageResize}
                 onChange=${(e) => setImageResize(e.target.value)}
               >
@@ -2861,20 +3314,20 @@ const requires = this;
                 <option value="512_max">最大边小于 512</option>
               </select>
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>压缩率：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>压缩率：</label>
               <input
                 type="range"
                 min="0"
                 max="100"
                 step="1"
                 value=${imageQuality}
-                style=${styles.range}
+                className=${classNames.range}
                 onInput=${(e) => setImageQuality(parseInt(e.target.value, 10))}
               />
-              <span style=${styles.rangeValue}>${imageQuality}%</span>
+              <span className=${classNames.rangeValue}>${imageQuality}%</span>
             </div>
-            <div style="font-size: 12px; color: #666;">
+            <div className=${classNames.hintText}>
               注意：压缩率仅当转码或尺寸压缩开启时生效，推荐 60% 以上。
             </div>
           </fieldset>
@@ -2905,31 +3358,29 @@ const requires = this;
 
       return html`
         <div>
-          <div
-            style="display: flex; justify-content: space-between; margin-bottom: 15px;"
-          >
+          <div class="${classNames.flexBetween}">
             <h3 style="margin: 0;">下载记录（最多50条）</h3>
-            <button style=${styles.btnDanger} onClick=${clearHistory}>
+            <button class="${classNames.btnDanger}" onClick=${clearHistory}>
               清空历史
             </button>
           </div>
           ${history.length === 0
-            ? html`<p style="color: #999; text-align: center;">暂无下载记录</p>`
+            ? html`<p class="${classNames.emptyHistory}">暂无下载记录</p>`
             : html`
-                <table style=${styles.table}>
+                <table class="${classNames.table}">
                   <thead>
                     <tr>
-                      <th style=${styles.th}>描述</th>
-                      <th style=${styles.th}>分享链接</th>
-                      <th style=${styles.th}>下载时间</th>
+                      <th class="${classNames.th}">描述</th>
+                      <th class="${classNames.th}">分享链接</th>
+                      <th class="${classNames.th}">下载时间</th>
                     </tr>
                   </thead>
                   <tbody>
                     ${history.map(
                       (item) => html`
                         <tr>
-                          <td style=${styles.td}>${item.desc || "-"}</td>
-                          <td style=${styles.td}>
+                          <td class="${classNames.td}">${item.desc || "-"}</td>
+                          <td class="${classNames.td}">
                             <a
                               href=${item.shareUrl}
                               target="_blank"
@@ -2937,7 +3388,7 @@ const requires = this;
                               >链接</a
                             >
                           </td>
-                          <td style=${styles.td}>
+                          <td class="${classNames.td}">
                             ${formatTime(item.downloadTime)}
                           </td>
                         </tr>
@@ -3067,11 +3518,13 @@ const requires = this;
 
       return html`
         <div>
-          <!-- 顶部操作栏，与 SettingsTab 保持一致 -->
+          <!-- 顶部操作栏 -->
           <div style="text-align: right; margin-bottom: 15px;">
-            <button style=${styles.btn} onClick=${handleSave}>保存设置</button>
+            <button className=${classNames.btn} onClick=${handleSave}>
+              保存设置
+            </button>
             <button
-              style=${styles.btnDanger}
+              className=${classNames.btnDanger}
               onClick=${handleReset}
               style="margin-left: 8px;"
             >
@@ -3080,23 +3533,25 @@ const requires = this;
           </div>
 
           <!-- ABDM 配置区块 -->
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>AB Download Manager (ABDM)</legend>
-            <div style=${styles.row}>
-              <label style=${styles.label}>服务地址：</label>
+          <fieldset className=${classNames.fieldset}>
+            <legend className=${classNames.legend}>
+              AB Download Manager (ABDM)
+            </legend>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>服务地址：</label>
               <input
                 type="text"
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${abdmDomain}
                 onInput=${(e) => setAbdmDomain(e.target.value)}
                 placeholder="http://localhost"
               />
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>端口：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>端口：</label>
               <input
                 type="text"
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${abdmPort}
                 onInput=${(e) => setAbdmPort(e.target.value)}
                 placeholder="15151"
@@ -3105,43 +3560,43 @@ const requires = this;
           </fieldset>
 
           <!-- Aria2 配置区块 -->
-          <fieldset style=${styles.fieldset}>
-            <legend style=${styles.legend}>Aria2 RPC</legend>
-            <div style=${styles.row}>
-              <label style=${styles.label}>服务地址：</label>
+          <fieldset className=${classNames.fieldset}>
+            <legend className=${classNames.legend}>Aria2 RPC</legend>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>服务地址：</label>
               <input
                 type="text"
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${aria2Domain}
                 onInput=${(e) => setAria2Domain(e.target.value)}
                 placeholder="http://localhost"
               />
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>端口：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>端口：</label>
               <input
                 type="text"
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${aria2Port}
                 onInput=${(e) => setAria2Port(e.target.value)}
                 placeholder="6800"
               />
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>路径：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>路径：</label>
               <input
                 type="text"
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${aria2Path}
                 onInput=${(e) => setAria2Path(e.target.value)}
                 placeholder="/jsonrpc"
               />
             </div>
-            <div style=${styles.row}>
-              <label style=${styles.label}>Token：</label>
+            <div className=${classNames.row}>
+              <label className=${classNames.label}>Token：</label>
               <input
                 type="text"
-                style=${styles.input}
+                className=${classNames.inputBase}
                 value=${aria2Token}
                 onInput=${(e) => setAria2Token(e.target.value)}
                 placeholder="可选"
@@ -3150,7 +3605,8 @@ const requires = this;
           </fieldset>
 
           <div
-            style="font-size: 12px; color: #666; background: #f9f9f9; padding: 8px; border-radius: 4px;"
+            className=${classNames.hintText}
+            style="padding: 8px; border-radius: 4px;"
           >
             💡
             注意：需要在“基本设置”中选择对应的下载器（browser/abdm/aria2）后，此处配置才会生效。
@@ -3181,12 +3637,14 @@ const requires = this;
       }[activeTab];
 
       return html`
-        <div style=${styles.container}>
-          <nav style=${styles.nav}>
+        <div className=${classNames.container}>
+          <nav className=${classNames.nav}>
             ${tabs.map(
               (tab) => html`
                 <button
-                  style=${styles.navBtn(activeTab === tab.id)}
+                  className=${`${classNames.navBtn} ${
+                    activeTab === tab.id ? classNames.navBtnActive : ""
+                  }`}
                   onClick=${() => setActiveTab(tab.id)}
                 >
                   ${tab.title}
@@ -3194,7 +3652,7 @@ const requires = this;
               `
             )}
           </nav>
-          <div style=${styles.content}>${current_tab}</div>
+          <div className=${classNames.content}>${current_tab}</div>
         </div>
       `;
     };
@@ -3215,68 +3673,73 @@ const requires = this;
      */
     const html = requires?.htmPreact?.html;
 
+    // 创建 CSS-in-JS 实例
+    const css = createCSS();
+
+    // 使用全局 theme 对象
     const styles = {
-      panel: ({ is_expand = false } = {}) => css`
-        position: fixed;
-        right: 24px;
-        bottom: 80px;
-        z-index: 999999;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        min-width: ${is_expand ? "240px" : ""};
-        max-width: min(320px, calc(100vw - 32px));
-        padding: 14px;
-        border-radius: 16px;
-        background: rgba(18, 18, 20, 0.94);
-        color: #fff;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
-        backdrop-filter: blur(10px);
-        font-family: sans-serif;
-      `,
-      section: css`
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      `,
-      sectionHeader: css`
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.7);
-      `,
-      headerAction: css`
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.7);
-        float: right;
-        cursor: pointer;
-      `,
-      status: css`
-        font-size: 13px;
-        line-height: 1.5;
-        white-space: pre-wrap;
-      `,
-      button: css`
-        border: none;
-        border-radius: 10px;
-        padding: 8px 12px;
-        cursor: pointer;
-        background: rgba(255, 255, 255, 0.12);
-        color: #fff;
-        font-size: 12px;
-      `,
-      primaryButton: css`
-        border: none;
-        border-radius: 10px;
-        padding: 8px 12px;
-        cursor: pointer;
-        background: #fe2c55;
-        color: #fff;
-        font-size: 12px;
-      `,
-      buttonRow: css`
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      `,
+      panel: ({ is_expand = false }) =>
+        css({
+          position: "fixed",
+          right: "24px",
+          bottom: "80px",
+          zIndex: 999999,
+          display: "flex",
+          flexDirection: "column",
+          gap: theme.spacing.md,
+          minWidth: is_expand ? "240px" : "",
+          maxWidth: "min(320px, calc(100vw - 32px))",
+          padding: "14px",
+          borderRadius: theme.borderRadius.lg,
+          background: theme.colors.bgOverlay,
+          color: theme.colors.textPrimary,
+          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.22)",
+          backdropFilter: theme.backdropBlur,
+          fontFamily: "sans-serif",
+        }),
+      section: css({
+        display: "flex",
+        flexDirection: "column",
+        gap: theme.spacing.sm,
+      }),
+      sectionHeader: css({
+        fontSize: theme.fontSize.xs,
+        color: theme.colors.textMuted,
+      }),
+      headerAction: css({
+        fontSize: theme.fontSize.xs,
+        color: theme.colors.textMuted,
+        float: "right",
+        cursor: "pointer",
+      }),
+      status: css({
+        fontSize: theme.fontSize.sm,
+        lineHeight: 1.5,
+        whiteSpace: "pre-wrap",
+      }),
+      button: css({
+        border: "none",
+        borderRadius: "10px",
+        padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+        cursor: "pointer",
+        background: "rgba(255, 255, 255, 0.12)",
+        color: theme.colors.textPrimary,
+        fontSize: theme.fontSize.xs,
+      }),
+      primaryButton: css({
+        border: "none",
+        borderRadius: "10px",
+        padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+        cursor: "pointer",
+        background: theme.colors.primary,
+        color: theme.colors.textPrimary,
+        fontSize: theme.fontSize.xs,
+      }),
+      buttonRow: css({
+        display: "flex",
+        flexWrap: "wrap",
+        gap: theme.spacing.sm,
+      }),
     };
 
     /**
@@ -3312,6 +3775,7 @@ const requires = this;
         // 根据所选内容下载
         profilePageHandler.downloadManager.startJob().catch((err) => {
           alert(`启动失败: ${err.message}`);
+          console.error(err);
         });
       };
       // 暂停下载
@@ -3325,20 +3789,20 @@ const requires = this;
       };
 
       const panel_body = html`
-        <div style=${styles.section}>
-          <div style=${styles.sectionHeader}>
+        <div class=${styles.section}>
+          <div class=${styles.sectionHeader}>
             <span>批量下载: ${profile_snapshot.profileName}</span>
-            <span style=${styles.headerAction} onClick=${collapse}>收起</span>
+            <span class=${styles.headerAction} onClick=${collapse}>收起</span>
             <span style="float:right;margin:0 2px;">|</span>
-            <span style=${styles.headerAction} onClick=${open_settings}
+            <span class=${styles.headerAction} onClick=${open_settings}
               >设置</span
             >
           </div>
-          <div style=${styles.status}>${profile_snapshot.summary}</div>
-          <div style=${styles.buttonRow}>
+          <div class=${styles.status}>${profile_snapshot.summary}</div>
+          <div class=${styles.buttonRow}>
             <button
               type="button"
-              style=${styles.button}
+              class=${styles.button}
               onClick=${open_job_modal}
             >
               ${"管理"}
@@ -3346,7 +3810,7 @@ const requires = this;
             ${!profile_snapshot.jobRunning
               ? html` <button
                     type="button"
-                    style=${styles.button}
+                    class=${styles.button}
                     onClick=${toggle_all}
                   >
                     ${profile_snapshot.counts.is_selected_all
@@ -3355,14 +3819,14 @@ const requires = this;
                   </button>
                   <button
                     type="button"
-                    style=${styles.primaryButton}
+                    class=${styles.primaryButton}
                     onClick=${start_download}
                   >
                     ${"开始下载"}
                   </button>`
               : html`<button
                   type="button"
-                  style=${styles.primaryButton}
+                  class=${styles.primaryButton}
                   onClick=${pause_download}
                 >
                   ${"暂停下载"}
@@ -3371,14 +3835,14 @@ const requires = this;
         </div>
       `;
       const expand_button = html`<span
-        style=${styles.headerAction}
+        class=${styles.headerAction}
         onClick=${expand}
       >
         插件
       </span>`;
 
       return html`
-        <div class="dy-dl-floating-panel" style=${styles.panel({ is_expand })}>
+        <div class="dy-dl-floating-panel ${styles.panel({ is_expand })}">
           ${is_expand ? panel_body : expand_button}
         </div>
       `;
@@ -3995,7 +4459,8 @@ const requires = this;
       // 这里简单加一个 inline style 确保 root 撑开
       modal.root.style.width = "800px";
       modal.root.style.maxWidth = "90vw";
-      modal.root.style.background = "#fff";
+      modal.root.style.background = "transparent";
+      modal.root.style.boxShadow = "none";
       modal.root.style.borderRadius = "8px";
       modal.root.style.overflow = "hidden";
 
@@ -4019,7 +4484,8 @@ const requires = this;
       });
       modal.root.style.width = "650px";
       modal.root.style.maxWidth = "90vw";
-      modal.root.style.background = "#fff";
+      modal.root.style.background = "transparent";
+      modal.root.style.boxShadow = "none";
       modal.root.style.borderRadius = "8px";
       modal.root.style.overflow = "hidden";
 
@@ -4562,12 +5028,18 @@ const requires = this;
 
   // ========== 批量下载管理模态框 ==========
   const ProfileJobModalComponents = (() => {
+    /**
+     * @type {import('preact/hooks')}
+     */
     const { useState, useEffect, useMemo, useCallback } = requires?.htmPreact;
     const html = requires?.htmPreact?.html;
 
-    // 深色主题样式
-    const styles = {
-      container: {
+    // 创建 CSS-in-JS 实例
+    const css = createCSS();
+
+    // 统一的样式类命名空间
+    const classes = {
+      container: css({
         display: "flex",
         flexDirection: "column",
         height: "75vh",
@@ -4575,187 +5047,198 @@ const requires = this;
         maxWidth: "95vw",
         overflow: "hidden",
         fontFamily: "sans-serif",
-        background: "rgba(18, 18, 20, 0.94)",
-        color: "#fff",
+        background: theme.colors.bgOverlay,
+        color: theme.colors.textPrimary,
         boxShadow: "0 10px 30px rgba(0, 0, 0, 0.22)",
-        borderRadius: "16px",
-        backdropFilter: "blur(10px)",
-      },
-      header: {
-        padding: "18px 22px",
-        borderBottom: "1px solid rgba(255,255,255,0.1)",
-      },
-      title: {
+        borderRadius: theme.borderRadius.lg,
+        backdropFilter: theme.backdropBlur,
+      }),
+      header: css({
+        padding: `18px ${theme.spacing.xl}`,
+        borderBottom: `1px solid ${theme.colors.borderLight}`,
+      }),
+      title: css({
         fontSize: "18px",
-        fontWeight: "600",
+        fontWeight: 600,
         margin: 0,
         marginBottom: "10px",
-        color: "#fff",
-      },
-      stats: {
+        color: theme.colors.textPrimary,
+      }),
+      stats: css({
         display: "flex",
         gap: "24px",
-        fontSize: "13px",
-        color: "rgba(255,255,255,0.7)",
-      },
-      progressBarContainer: {
+        fontSize: theme.fontSize.sm,
+        color: theme.colors.textMuted,
+      }),
+      progressBarContainer: css({
         height: "6px",
         background: "rgba(255,255,255,0.15)",
         borderRadius: "3px",
         marginTop: "14px",
         overflow: "hidden",
-      },
-      progressBarFill: (percent) => ({
-        width: `${percent}%`,
+      }),
+      progressBarFill: css({
         height: "100%",
-        background: "#fe2c55",
+        background: theme.colors.primary,
         transition: "width 0.2s",
       }),
-      filterBar: {
+      filterBar: css({
         display: "flex",
         alignItems: "center",
-        gap: "12px",
-        padding: "12px 22px",
-        borderBottom: "1px solid rgba(255,255,255,0.1)",
-        background: "rgba(0,0,0,0.2)",
-      },
-      filterButtonGroup: {
-        display: "flex",
-        gap: "6px",
-      },
-      filterButton: (active) => ({
-        padding: "5px 12px",
-        borderRadius: "16px",
-        border: "1px solid rgba(255,255,255,0.2)",
-        background: active ? "rgba(254,44,85,0.2)" : "transparent",
-        color: active ? "#fe2c55" : "rgba(255,255,255,0.8)",
-        fontSize: "12px",
-        cursor: "pointer",
-        transition: "0.2s",
-        fontWeight: active ? "500" : "normal",
+        gap: theme.spacing.md,
+        padding: `${theme.spacing.md} ${theme.spacing.xl}`,
+        borderBottom: `1px solid ${theme.colors.borderLight}`,
+        background: theme.colors.bgNav,
       }),
-      searchInput: {
+      searchInput: css({
         flex: 1,
         padding: "6px 14px",
-        borderRadius: "20px",
-        border: "1px solid rgba(255,255,255,0.2)",
+        borderRadius: theme.borderRadius.full,
+        border: `1px solid ${theme.colors.borderInput}`,
         background: "rgba(255,255,255,0.08)",
-        color: "#fff",
-        fontSize: "13px",
+        color: theme.colors.textPrimary,
+        fontSize: theme.fontSize.sm,
         outline: "none",
-      },
-      actions: {
+      }),
+      actions: css({
         display: "flex",
         gap: "10px",
-        padding: "12px 22px",
-        borderBottom: "1px solid rgba(255,255,255,0.1)",
-      },
-      button: (primary) => ({
-        padding: "7px 18px",
-        borderRadius: "20px",
-        border: primary ? "none" : "1px solid rgba(255,255,255,0.2)",
-        background: primary ? "#fe2c55" : "transparent",
-        color: primary ? "#fff" : "rgba(255,255,255,0.9)",
-        fontSize: "13px",
-        cursor: "pointer",
-        fontWeight: primary ? "500" : "normal",
-        transition: "0.2s",
-        backdropFilter: "blur(5px)",
+        padding: `${theme.spacing.md} ${theme.spacing.xl}`,
+        borderBottom: `1px solid ${theme.colors.borderLight}`,
       }),
-      closeButton: {
-        position: "absolute",
-        top: "12px",
-        right: "12px",
+      buttonBase: css({
+        padding: "7px 18px",
+        borderRadius: theme.borderRadius.full,
+        border: `1px solid ${theme.colors.borderInput}`,
         background: "transparent",
         color: "rgba(255,255,255,0.9)",
-        fontSize: "13px",
+        fontSize: theme.fontSize.sm,
         cursor: "pointer",
-      },
-      tableContainer: {
+        fontWeight: "normal",
+        transition: "0.2s",
+        backdropFilter: "blur(5px)",
+        "&:disabled": {
+          opacity: 0.5,
+          cursor: "not-allowed",
+        },
+      }),
+      buttonPrimary: css({
+        border: "none",
+        background: theme.colors.primary,
+        color: theme.colors.textPrimary,
+        fontWeight: 500,
+      }),
+      closeButton: css({
+        position: "absolute",
+        top: theme.spacing.md,
+        right: theme.spacing.md,
+        background: "transparent",
+        color: "rgba(255,255,255,0.9)",
+        fontSize: theme.fontSize.sm,
+        cursor: "pointer",
+      }),
+      tableContainer: css({
         flex: 1,
         overflowY: "auto",
-        padding: "0 22px 20px",
+        padding: `0 ${theme.spacing.xl} 20px`,
         scrollbarWidth: "thin",
         scrollbarColor: "rgba(255,255,255,0.3) rgba(0,0,0,0.2)",
-      },
-      table: {
+      }),
+      table: css({
         width: "100%",
         borderCollapse: "collapse",
-        fontSize: "13px",
-        color: "#fff",
-      },
-      th: {
+        fontSize: theme.fontSize.sm,
+        color: theme.colors.textPrimary,
+      }),
+      th: css({
         position: "sticky",
         top: 0,
         background: "rgba(18,18,20,0.98)",
         padding: "10px 8px",
         textAlign: "left",
-        borderBottom: "1px solid rgba(255,255,255,0.15)",
-        fontWeight: "600",
-        color: "rgba(255,255,255,0.8)",
-        fontSize: "12px",
+        borderBottom: `1px solid ${theme.colors.borderMedium}`,
+        fontWeight: 600,
+        color: theme.colors.textSecondary,
+        fontSize: theme.fontSize.xs,
         backdropFilter: "blur(5px)",
-      },
-      td: {
+        whiteSpace: "nowrap",
+      }),
+      td: css({
         padding: "10px 8px",
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        borderBottom: `1px solid ${theme.colors.borderLight}`,
         verticalAlign: "middle",
-      },
-      checkbox: {
+      }),
+      checkbox: css({
         width: "18px",
         height: "18px",
         cursor: "pointer",
-        accentColor: "#fe2c55",
-      },
-      cover: {
+        accentColor: theme.colors.primary,
+      }),
+      cover: css({
         width: "48px",
         height: "64px",
         objectFit: "cover",
-        borderRadius: "4px",
+        borderRadius: theme.borderRadius.sm,
         background: "rgba(255,255,255,0.05)",
-      },
-      desc: {
+      }),
+      desc: css({
         maxWidth: "180px",
         whiteSpace: "nowrap",
         overflow: "hidden",
         textOverflow: "ellipsis",
-      },
-      typeBadge: {
+      }),
+      typeBadge: css({
         display: "inline-block",
         padding: "2px 8px",
-        borderRadius: "12px",
+        borderRadius: theme.borderRadius.full,
         fontSize: "11px",
         background: "rgba(255,255,255,0.1)",
-        color: "#fff",
-      },
-      statusBadge: (downloaded) => ({
+        color: theme.colors.textPrimary,
+      }),
+      statusBadgeBase: css({
         display: "inline-block",
         padding: "2px 8px",
-        borderRadius: "12px",
+        borderRadius: theme.borderRadius.full,
         fontSize: "11px",
-        background: downloaded
-          ? "rgba(46,125,50,0.25)"
-          : "rgba(254,44,85,0.15)",
-        color: downloaded ? "#81c784" : "#ff8a80",
-        border: downloaded
-          ? "1px solid rgba(46,125,50,0.5)"
-          : "1px solid rgba(254,44,85,0.4)",
       }),
-      footer: {
-        padding: "12px 22px",
-        borderTop: "1px solid rgba(255,255,255,0.1)",
+      statusBadgeDownloaded: css({
+        background: "rgba(46,125,50,0.25)",
+        color: "#81c784",
+        border: "1px solid rgba(46,125,50,0.5)",
+      }),
+      statusBadgePending: css({
+        background: "rgba(254,44,85,0.15)",
+        color: "#ff8a80",
+        border: "1px solid rgba(254,44,85,0.4)",
+      }),
+      footer: css({
+        padding: `${theme.spacing.md} ${theme.spacing.xl}`,
+        borderTop: `1px solid ${theme.colors.borderLight}`,
         textAlign: "right",
-        background: "rgba(0,0,0,0.2)",
-        color: "rgba(255,255,255,0.6)",
-        fontSize: "12px",
-      },
+        background: theme.colors.bgNav,
+        color: theme.colors.textMuted,
+        fontSize: theme.fontSize.xs,
+      }),
+      typeFilterSelect: css({
+        marginLeft: "8px",
+        padding: "2px 8px",
+        borderRadius: theme.borderRadius.full,
+        border: "none",
+        background: "transparent",
+        color: theme.colors.textPrimary,
+        fontSize: theme.fontSize.xs,
+        outline: "none",
+        cursor: "pointer",
+
+        option: {
+          background: "#2c2c2e",
+          color: theme.colors.textPrimary,
+          padding: theme.spacing.sm,
+        },
+      }),
     };
 
-    /**
-     *
-     * @param {{profilePageHandler: ProfilePageHandler, onClose: Function}} param0
-     * @returns
-     */
+    // ========== 组件 ==========
     const App = ({ profilePageHandler, onClose }) => {
       const { downloadManager, dataService } = profilePageHandler;
       const [snapshot, setSnapshot] = useState(() =>
@@ -4763,8 +5246,8 @@ const requires = this;
       );
       const [rawMediaList, setRawMediaList] = useState([]);
       const [searchText, setSearchText] = useState("");
+      const [typeFilter, setTypeFilter] = useState("all"); // 'all' | 'video' | 'album'
 
-      // 构建原始媒体列表
       const buildMediaList = useCallback(() => {
         const knownIds = downloadManager.jobState?.knownIds || [];
         const items = knownIds
@@ -4780,7 +5263,6 @@ const requires = this;
               downloaded,
               failed,
               selected: downloadManager.selectedIds.has(id),
-              // 判断类型：有 images 数组且长度 > 0 为图集，否则为视频
               type: media.images && media.images.length > 0 ? "album" : "video",
             };
           })
@@ -4791,13 +5273,11 @@ const requires = this;
         return items;
       }, [downloadManager, dataService]);
 
-      // 刷新数据
       const refreshData = useCallback(() => {
         setSnapshot(downloadManager.getSnapshot());
         setRawMediaList(buildMediaList());
       }, [buildMediaList, downloadManager]);
 
-      // 订阅事件并定时刷新
       useEffect(() => {
         refreshData();
         const unsubState = downloadManager.on("stateChanged", refreshData);
@@ -4810,70 +5290,52 @@ const requires = this;
         };
       }, [refreshData]);
 
-      // 搜索过滤
+      // 同时应用搜索与类型过滤
       const filteredList = useMemo(() => {
-        if (!searchText.trim()) return rawMediaList;
-        const lowerSearch = searchText.toLowerCase().trim();
-        return rawMediaList.filter((item) => {
-          const desc = (item.media.desc || "").toLowerCase();
-          const id = String(item.awemeId).toLowerCase();
-          const shortId = MediaHandler.toShortId(item.awemeId).toLowerCase();
-          return (
-            desc.includes(lowerSearch) ||
-            id.includes(lowerSearch) ||
-            shortId.includes(lowerSearch)
-          );
-        });
-      }, [rawMediaList, searchText]);
+        let list = rawMediaList;
 
-      // 获取过滤后的 ID 集合
+        // 类型过滤
+        if (typeFilter !== "all") {
+          list = list.filter((item) => item.type === typeFilter);
+        }
+
+        // 搜索过滤
+        if (searchText.trim()) {
+          const lowerSearch = searchText.toLowerCase().trim();
+          list = list.filter((item) => {
+            const desc = (item.media.desc || "").toLowerCase();
+            const id = String(item.awemeId).toLowerCase();
+            const shortId = MediaHandler.toShortId(item.awemeId).toLowerCase();
+            return (
+              desc.includes(lowerSearch) ||
+              id.includes(lowerSearch) ||
+              shortId.includes(lowerSearch)
+            );
+          });
+        }
+
+        return list;
+      }, [rawMediaList, searchText, typeFilter]);
+
       const filteredIds = useMemo(
         () => new Set(filteredList.map((item) => item.awemeId)),
         [filteredList]
       );
 
-      // 全选/全不选 (仅影响过滤后的项)
       const handleSelectAllFiltered = (checked) => {
         filteredList.forEach((item) => {
           downloadManager.markSelect(item.awemeId, checked);
         });
       };
 
-      // 筛选按钮动作
-      const selectAllVideos = () => {
-        filteredList.forEach((item) => {
-          if (item.type === "video")
-            downloadManager.markSelect(item.awemeId, true);
-        });
-      };
-      const selectAllAlbums = () => {
-        filteredList.forEach((item) => {
-          if (item.type === "album")
-            downloadManager.markSelect(item.awemeId, true);
-        });
-      };
-      const deselectAllVideos = () => {
-        filteredList.forEach((item) => {
-          if (item.type === "video")
-            downloadManager.markSelect(item.awemeId, false);
-        });
-      };
-      const deselectAllAlbums = () => {
-        filteredList.forEach((item) => {
-          if (item.type === "album")
-            downloadManager.markSelect(item.awemeId, false);
-        });
-      };
-
-      // 处理单行选择
       const handleSelectRow = (awemeId, checked) => {
         downloadManager.markSelect(awemeId, checked);
       };
 
-      // 任务控制
       const handleStart = () => {
         downloadManager.startJob().catch((err) => {
           alert(`启动失败: ${err.message}`);
+          console.error(err);
         });
       };
       const handleStop = () => downloadManager.stopJob();
@@ -4888,12 +5350,10 @@ const requires = this;
       const handleOpenSettings = () =>
         profilePageHandler.mediaHandler.open_config_modal();
 
-      // 计算进度
       const totalKnown = snapshot.counts.known;
       const downloaded = snapshot.counts.downloaded;
       const percent = totalKnown > 0 ? (downloaded / totalKnown) * 100 : 0;
 
-      // 判断过滤后是否全选
       const filteredSelectedCount = filteredList.filter(
         (item) => item.selected
       ).length;
@@ -4902,11 +5362,13 @@ const requires = this;
         filteredSelectedCount === filteredList.length;
 
       return html`
-        <div style=${styles.container}>
-          <!-- 头部：标题、统计、进度条 -->
-          <div style=${styles.header}>
-            <span style=${styles.closeButton} onClick=${onClose}> ✕ 关闭 </span>
-            <h3 style=${styles.title}>
+        <div class=${classes.container}>
+          <!-- 头部 -->
+          <div class=${classes.header}>
+            <span class=${classes.closeButton} onClick=${onClose}>
+              ✕ 关闭
+            </span>
+            <h3 class=${classes.title}>
               📦 批量下载管理器 · ${snapshot.profileName || "当前作者"}
             </h3>
             <h4>
@@ -4917,103 +5379,92 @@ const requires = this;
                   : snapshot.statusLabel || "待命"}</span
               >
             </h4>
-            <div style=${styles.stats}>
+            <div class=${classes.stats}>
               <span>📊 发现: ${totalKnown}</span>
               <span>✅ 已下载: ${downloaded}</span>
               <span>❌ 失败: ${snapshot.counts.failed}</span>
               <span>☑️ 已选: ${snapshot.counts.selected}</span>
             </div>
-            <div style=${styles.progressBarContainer}>
-              <div style=${styles.progressBarFill(percent)} />
+            <div class=${classes.progressBarContainer}>
+              <div
+                class=${classes.progressBarFill}
+                style=${{ width: percent + "%" }}
+              />
             </div>
           </div>
 
-          <!-- 筛选栏：按钮组 + 搜索框 -->
-          <div style=${styles.filterBar}>
-            <div style=${styles.filterButtonGroup}>
-              <button
-                style=${styles.filterButton(false)}
-                onClick=${selectAllVideos}
-              >
-                🎬 全选视频
-              </button>
-              <button
-                style=${styles.filterButton(false)}
-                onClick=${selectAllAlbums}
-              >
-                🖼️ 全选图集
-              </button>
-              <button
-                style=${styles.filterButton(false)}
-                onClick=${deselectAllVideos}
-              >
-                🚫 取消视频
-              </button>
-              <button
-                style=${styles.filterButton(false)}
-                onClick=${deselectAllAlbums}
-              >
-                🚫 取消图集
-              </button>
-            </div>
+          <!-- 筛选栏 -->
+          <div class=${classes.filterBar}>
             <input
               type="text"
               placeholder="🔍 搜索描述或ID..."
-              style=${styles.searchInput}
+              class=${classes.searchInput}
               value=${searchText}
               onInput=${(e) => setSearchText(e.target.value)}
             />
           </div>
 
           <!-- 操作按钮栏 -->
-          <div style=${styles.actions}>
+          <div class=${classes.actions}>
             <button
-              style=${styles.button(true)}
+              class=${`${classes.buttonBase} ${classes.buttonPrimary}`}
               onClick=${handleStart}
               disabled=${snapshot.jobRunning}
             >
               ▶ 开始下载选中
             </button>
             <button
-              style=${styles.button(false)}
+              class=${classes.buttonBase}
               onClick=${handleStop}
               disabled=${!snapshot.jobRunning}
             >
               ⏸️ 暂停
             </button>
-            <button style=${styles.button(false)} onClick=${handleReset}>
+            <button class=${classes.buttonBase} onClick=${handleReset}>
               🔄 重置记录
             </button>
-            <button style=${styles.button(false)} onClick=${handleOpenSettings}>
+            <button class=${classes.buttonBase} onClick=${handleOpenSettings}>
               ⚙️ 设置
             </button>
           </div>
 
           <!-- 表格区域 -->
-          <div style=${styles.tableContainer}>
-            <table style=${styles.table}>
+          <div class=${classes.tableContainer}>
+            <table class=${classes.table}>
               <thead>
                 <tr>
-                  <th style=${styles.th} width="40px">
+                  <th class=${classes.th} width="40px">
                     <input
                       type="checkbox"
-                      style=${styles.checkbox}
+                      class=${classes.checkbox}
                       checked=${isFilteredAllSelected}
                       onChange=${(e) =>
                         handleSelectAllFiltered(e.target.checked)}
                     />
                   </th>
-                  <th style=${styles.th} width="60px">封面</th>
-                  <th style=${styles.th}>描述</th>
-                  <th style=${styles.th} width="80px">类型</th>
-                  <th style=${styles.th} width="100px">状态</th>
-                  <th style=${styles.th} width="120px">发布时间</th>
+                  <th class=${classes.th} width="60px">封面</th>
+                  <th class=${classes.th}>描述</th>
+                  <th class=${classes.th} width="100px">
+                    <select
+                      class=${classes.typeFilterSelect}
+                      value=${typeFilter}
+                      onChange=${(e) => setTypeFilter(e.target.value)}
+                    >
+                      <option value="all">全部</option>
+                      <option value="video">视频</option>
+                      <option value="album">图集</option>
+                    </select>
+                  </th>
+                  <th class=${classes.th} width="100px">状态</th>
+                  <th class=${classes.th} width="120px">发布时间</th>
                 </tr>
               </thead>
               <tbody>
                 ${filteredList.map((item) => {
                   const media = item.media;
                   const coverUrl =
+                    media.video?.dynamicCover ||
+                    media.video?.cover ||
                     media.video?.originCoverUrlList?.[1] ||
                     media.video?.originCoverUrlList?.[0] ||
                     media.images?.[0]?.urlList?.[0] ||
@@ -5024,35 +5475,40 @@ const requires = this;
                     : "-";
                   const typeLabel =
                     item.type === "album" ? "📁 图集" : "🎬 视频";
+                  const statusBadgeCls = `${classes.statusBadgeBase} ${
+                    item.downloaded
+                      ? classes.statusBadgeDownloaded
+                      : classes.statusBadgePending
+                  }`;
 
                   return html`
                     <tr key=${item.awemeId}>
-                      <td style=${styles.td}>
+                      <td class=${classes.td}>
                         <input
                           type="checkbox"
-                          style=${styles.checkbox}
+                          class=${classes.checkbox}
                           checked=${item.selected}
                           onChange=${(e) =>
                             handleSelectRow(item.awemeId, e.target.checked)}
                         />
                       </td>
-                      <td style=${styles.td}>
+                      <td class=${classes.td}>
                         ${coverUrl &&
-                        html`<img src=${coverUrl} style=${styles.cover} />`}
+                        html`<img src=${coverUrl} class=${classes.cover} />`}
                       </td>
-                      <td style=${styles.td}>
-                        <div style=${styles.desc} title=${desc}>${desc}</div>
+                      <td class=${classes.td}>
+                        <div class=${classes.desc} title=${desc}>${desc}</div>
                         <div
                           style="font-size:11px;color:rgba(255,255,255,0.5);"
                         >
                           ID: ${MediaHandler.toShortId(item.awemeId)}
                         </div>
                       </td>
-                      <td style=${styles.td}>
-                        <span style=${styles.typeBadge}>${typeLabel}</span>
+                      <td class=${classes.td}>
+                        <span class=${classes.typeBadge}>${typeLabel}</span>
                       </td>
-                      <td style=${styles.td}>
-                        <span style=${styles.statusBadge(item.downloaded)}>
+                      <td class=${classes.td}>
+                        <span class=${statusBadgeCls}>
                           ${item.downloaded
                             ? "✅ 已下载"
                             : item.failed
@@ -5060,7 +5516,7 @@ const requires = this;
                             : "⏳ 待下载"}
                         </span>
                       </td>
-                      <td style=${styles.td}>${createDate}</td>
+                      <td class=${classes.td}>${createDate}</td>
                     </tr>
                   `;
                 })}
@@ -5079,8 +5535,8 @@ const requires = this;
           </div>
 
           <!-- 底部提示 -->
-          <div style=${styles.footer}>
-            提示：勾选作品后点击“开始下载”将按顺序下载选中作品。搜索仅作用于当前列表，筛选按钮仅影响过滤后的可见项。
+          <div class=${classes.footer}>
+            提示：勾选作品后点击“开始下载”将按顺序下载选中作品。使用类型筛选快速定位内容。
           </div>
         </div>
       `;
@@ -5833,6 +6289,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
      * @param {import("./types").DouyinPlayer.PlayerInstance} player
      */
     getDanmakuList(player) {
+      // TODO 需要增强这个函数，从player上取到的只是渲染数据，如果是长视频只包含一部分
+      // 主要是需要监听 aweme/v1/web/danmaku/get_v2 重放这个请求，但是鉴权逻辑比较复杂...所以现在没实现
+
       return player?.danmaku?.main?.data || [];
     }
 
