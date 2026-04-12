@@ -87,11 +87,13 @@
 
 点击【插件>媒体详情】可以查看视频分辨率、图集列表、音乐、JSON
 
-<img width="782" height="620" alt="image" src="https://github.com/user-attachments/assets/23c2a44f-ce35-472b-80df-1fa36cf60668" />
+<img width="729" height="764" alt="image" src="https://github.com/user-attachments/assets/0d067b13-bbee-460f-a9a3-e0c47010603f" />
+
 
 ### 配置和历史
 
-<img width="624" height="688" alt="image" src="https://github.com/user-attachments/assets/8dc1bbf7-a545-4d35-a9ff-c6a0f6be9aaa" />
+<img width="578" height="656" alt="image" src="https://github.com/user-attachments/assets/5b1d6b53-ad86-4380-9a44-b4b8288dc2ec" />
+
 
 #### 视频下载
 
@@ -111,17 +113,21 @@
 
 ### 下载器
 
-<img width="605" height="244" alt="image" src="https://github.com/user-attachments/assets/b20b5c3c-ee49-4855-a065-cc2c12bf118f" />
+<img width="555" height="142" alt="image" src="https://github.com/user-attachments/assets/dc0458af-82db-4f8b-94fd-bf02fda118d5" />
+
 
 #### 下载器配置
-
-<img width="603" height="548" alt="image" src="https://github.com/user-attachments/assets/7cba58b0-ea79-4b53-8429-107c0dfd7663" />
-
 支持使用外部下载器下载文件，方便归档整理。
+
+目前支持：
+- [abdm](https://github.com/amir1376/ab-download-manager)
+- [aria2](https://github.com/aria2/aria2)
+
+<img width="575" height="553" alt="image" src="https://github.com/user-attachments/assets/85f572e5-6c2c-4be2-a6a6-a7543635203d" />
 
 #### 关于保存路径
 
-暂不支持自定义保存路径，后续会支持
+暂不支持自定义保存路径（后续会支持）
 
 目前默认保存路径是如下格式：
 
