@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name            抖音下载
 // @namespace       https://github.com/zhzLuke96/douyin-dl-user-js
-// @version         1.4.2
+// @version         1.4.3
 // @description     为web版抖音增加下载按钮
 // @author          zhzluke96
 // @match           https://*.douyin.com/*
@@ -3992,7 +3992,7 @@ const requires = this;
         media,
         author_info: media.authorInfo,
         uid: media.authorUserId,
-        music_ame: media.music.musicName,
+        music_name: media.music?.musicName || "",
         now_date: new Date(),
         create_date: new Date(media.createTime * 1000),
       };
