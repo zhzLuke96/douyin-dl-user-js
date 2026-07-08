@@ -2,6 +2,7 @@ import { useState, useEffect } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
 import { theme } from "../utils/theme"
 import { ProfileJobModalApp } from "./ProfileJobModal"
+// 创建 CSS-in-JS 实例
 const css = createCSS()
 const s = {
   panelClosed: css({ position: "fixed", right: "24px", bottom: "80px", zIndex: 999999, display: "flex", flexDirection: "column", gap: theme.spacing.md }),
@@ -80,6 +81,7 @@ const s = {
 import type { ProfileDownloadManager } from "../handlers/ProfileDownloadManager"
 import type { ProfileDataService } from "../handlers/ProfileDataService"
 
+// 浮动操作面板主组件
 export const FloatingPanelApp = ({ dataService, downloadManager }: { dataService: ProfileDataService; downloadManager: ProfileDownloadManager }) => {
   const [exp, setExp] = useState(false)
   const [snap, setSnap] = useState(() => downloadManager.getSnapshot())

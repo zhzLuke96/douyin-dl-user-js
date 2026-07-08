@@ -49,7 +49,7 @@ export class ProfileDataService {
   }
 
   isProfilePage(): boolean {
-    return isProfilePagePath()
+    return isProfilePagePath() // 外部工具函数
   }
 
   getProfileContext(): { secUid: string; profileName: string; tabKey: string; profileKey: string } | null {

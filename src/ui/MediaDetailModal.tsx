@@ -1,9 +1,12 @@
+// 媒体详情 modal
 import { useState, useEffect, useRef } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
 import { theme } from "../utils/theme"
 import { DownloaderLauncher } from "../core/DownloaderLauncher"
 
+// --- 初始化 CSS-in-JS 工具 ---
 const css = createCSS()
+// --- 生成所有样式类名（静态 + 动态变体）---
 const styles = {
   container: css({
     display: "flex",
@@ -86,12 +89,15 @@ const styles = {
   danmakuTableWrapper: css({ maxHeight: "500px", overflowY: "auto", border: "1px solid #ddd", borderRadius: "4px" }),
 }
 
+// 辅助函数：根据 active 状态返回导航按钮类名
 const navBtnClass = (active: boolean) => (active ? styles.navBtnBase + " " + styles.navBtnActive : styles.navBtnBase)
+// --- 辅助函数 ---
 const fmt = {
   ts: (ts?: number) => (ts ? new Date(ts * 1000).toLocaleString() : "N/A"),
   num: (n?: number) => (n ? (n > 10000 ? (n / 10000).toFixed(1) + " 万" : n) : 0),
   size: (s?: number) => (s ? (s / 1024 / 1024).toFixed(2) + " MB" : "-"),
 }
+// ms 转 ASS 时间格式 (HH:MM:SS.mm)
 const msToAssTime = (ms: number) => {
   const h = Math.floor(ms / 3600000)
   const m = Math.floor((ms % 3600000) / 60000)
@@ -100,6 +106,7 @@ const msToAssTime = (ms: number) => {
   return h.toString().padStart(2, "0") + ":" + m.toString().padStart(2, "0") + ":" + s.toString().padStart(2, "0") + "." + cs.toString().padStart(2, "0")
 }
 
+// 基础键值对
 const KeyValue = ({ label, children }: { label: string; children?: any }) => (
   <div className={styles.row}>
     <strong className={styles.label}>{label}</strong>
@@ -107,6 +114,7 @@ const KeyValue = ({ label, children }: { label: string; children?: any }) => (
   </div>
 )
 
+// 可复制的键值对
 const Copyable = ({ label, value }: { label: string; value?: string }) => {
   const [c, sc] = useState(false)
   const h = () => {
@@ -127,6 +135,7 @@ const Copyable = ({ label, value }: { label: string; value?: string }) => {
   )
 }
 
+// 表格组件
 const Table = ({ headers, rows }: { headers: string[]; rows: any[][] }) => (
   <table className={styles.table}>
     <thead>
@@ -151,6 +160,7 @@ const Table = ({ headers, rows }: { headers: string[]; rows: any[][] }) => (
     </tbody>
   </table>
 )
+// Launcher 配置
 const launchers = [
   { key: "browser", label: "打开", buildUrl: (u: string) => u },
   {
@@ -182,6 +192,7 @@ const launchers = [
     },
   },
 ]
+// 通用唤醒按钮组
 const LaunchButtons = ({ url }: { url: string }) => (
   <div className={styles.flexWrap}>
     {launchers.map((l) => {
@@ -203,6 +214,7 @@ const LaunchButtons = ({ url }: { url: string }) => (
   </div>
 )
 
+// 视频部分
 const VideoSection = ({ video, filenameBase }: { video: any; filenameBase: string }) => {
   if (!video?.bitRateList?.length) return null
   const cu = video.originCoverUrlList?.[1] || video.originCoverUrlList?.[0]
@@ -246,6 +258,7 @@ const VideoSection = ({ video, filenameBase }: { video: any; filenameBase: strin
   )
 }
 
+// 图片部分
 const ImageSection = ({ images }: { images: any[] }) => {
   if (!images?.length) return null
   return (
@@ -277,6 +290,7 @@ const ImageSection = ({ images }: { images: any[] }) => {
   )
 }
 
+// 音乐部分
 const MusicSection = ({ music }: { music: any }) => {
   if (!music) return null
   const du = music.playUrl?.urlList?.[0] || ""
@@ -305,6 +319,7 @@ const MusicSection = ({ music }: { music: any }) => {
   )
 }
 
+// --- Tab 内容组件 ---
 const MediaTab = ({ media, filenameBase }: { media: any; filenameBase: string }) => {
   if (!media) return <div>无媒体信息</div>
   return (
@@ -482,6 +497,7 @@ const tabs = [
   { id: "json", title: "JSON", Comp: JsonTab },
 ]
 
+// --- 主入口组件 ---
 export const MediaDetailModalApp = ({ media, filenameBase }: { media: any; filenameBase: string }) => {
   const [tab, setTab] = useState("media")
   const t = tabs.find((t) => t.id === tab)!

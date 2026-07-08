@@ -7,6 +7,7 @@ interface ImageConfig {
   image_quality: number
 }
 
+// #region 图片转码压缩
 export class ImageProcessor {
   private config: ImageConfig
   private resizeMap: Record<string, number> = {
@@ -26,6 +27,9 @@ export class ImageProcessor {
     }
   }
 
+  /**
+   * 根据配置判断是否需要压缩转码
+   */
   is_need_convert(width: number, height: number): boolean {
     const { image_convert_codecs, image_resize_codecs } = this.config
     const need_format = image_convert_codecs !== "default"
@@ -34,6 +38,9 @@ export class ImageProcessor {
     return need_format || need_resize
   }
 
+  /**
+   * 主入口
+   */
   async process(file: File | Blob): Promise<{ blob: Blob; outputType?: string }> {
     const bitmap = await createImageBitmap(file)
     let { width, height } = bitmap
@@ -60,6 +67,10 @@ export class ImageProcessor {
     return { blob, outputType }
   }
 
+  /**
+   * resize 逻辑
+   * @private
+   */
   private _resize(width: number, height: number) {
     const mode = this.config.image_resize_codecs
     const maxEdge = this.resizeMap[mode]
@@ -71,6 +82,10 @@ export class ImageProcessor {
     }
   }
 
+  /**
+   * canvas 创建（兼容 fallback）
+   * @private
+   */
   private _createCanvas(width: number, height: number): HTMLCanvasElement | OffscreenCanvas {
     if (typeof OffscreenCanvas !== "undefined") {
       return new OffscreenCanvas(width, height)
@@ -81,6 +96,10 @@ export class ImageProcessor {
     return canvas
   }
 
+  /**
+   * 输出格式决策
+   * @private
+   */
   private _getOutputType(inputType: string): string {
     const codec = this.config.image_convert_codecs
     if (codec === "png") return "image/png"
@@ -91,12 +110,20 @@ export class ImageProcessor {
     return "image/jpeg"
   }
 
+  /**
+   * 质量归一化
+   * @private
+   */
   private _normalizeQuality(): number {
     const q = this.config.image_quality
     if (!q) return 0.8
     return Math.min(1, Math.max(0.1, q / 100))
   }
 
+  /**
+   * toBlob 封装（兼容 HTMLCanvas）
+   * @private
+   */
   private _toBlob(canvas: HTMLCanvasElement | OffscreenCanvas, type: string): Promise<Blob> {
     const quality = this._normalizeQuality()
     if ((canvas as OffscreenCanvas).convertToBlob) {
@@ -107,3 +134,4 @@ export class ImageProcessor {
     })
   }
 }
+// #endregion

@@ -1,4 +1,8 @@
+/** 快捷键管理器 */
 export class HotkeyManager {
+  /**
+   * 注册快捷键
+   */
   addHotkey(key: string, fn: () => void): { dispose: () => void } {
     const callback = (ev: KeyboardEvent) => {
       if (ev.key.toLowerCase() !== key.toLowerCase()) return

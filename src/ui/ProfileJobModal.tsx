@@ -1,3 +1,4 @@
+// 批量下载任务管理弹窗
 import { useState, useEffect } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
 import { theme } from "../utils/theme"
@@ -63,6 +64,7 @@ const s = {
   td: css({ padding: theme.spacing.sm, borderBottom: "1px solid " + theme.colors.borderLight, color: theme.colors.textSecondary }),
 }
 
+// ========== 组件 ==========
 export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManager: ProfileDownloadManager; onClose: () => void }) => {
   const [snap, setSnap] = useState(() => downloadManager.getSnapshot())
   useEffect(() => {

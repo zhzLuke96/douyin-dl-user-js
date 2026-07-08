@@ -4,6 +4,7 @@ import { throttle } from "../utils/performance"
 import type { MediaHandler } from "./MediaHandler"
 import type { ProfileDataService } from "./ProfileDataService"
 
+/** 事件定义（供外部订阅） */
 interface Events extends Record<string, any[]> {
   stateChanged: [ProfileDownloadManager]
   countsUpdated: [ReturnType<ProfileDownloadManager["getCounts"]>]
@@ -25,6 +26,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
   jobState: ReturnType<(typeof ProfileDownloadState)["create_default"]> | null = null
   jobRunning = false
   jobStopRequested = false
+  /** 选中的媒体 */
   selectedIds = new Set<string>()
   private collect_timer: ReturnType<typeof setInterval> | null = null
 
@@ -49,6 +51,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
     }
   }
 
+  // 确保 jobState 与当前页面 profile 匹配
   private _ensureJobState(profile?: any) {
     if (!profile) {
       profile = this.dataService.getProfileContext()
@@ -142,6 +145,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
     }
   }
 
+  // 重置状态
   resetState(): boolean {
     const profile = this.dataService.getProfileContext()
     if (!profile) return false
@@ -153,6 +157,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
     return true
   }
 
+  // 停止任务
   stopJob() {
     this.jobStopRequested = true
     if (this.jobState?.profileKey) {
@@ -163,6 +168,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
     this.emit("jobStopped")
   }
 
+  // 启动下载循环（由外部调用，这里只做前置准备）
   async startJob() {
     if (!this.dataService.isProfilePage()) throw new Error("请在作者主页中使用全量下载。")
     if (this.jobRunning) return
@@ -193,6 +199,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
     this._saveJobState()
     this.emit("stateChanged", this)
 
+    // 获取所有选中但尚未成功下载的作品ID
     const selectedIdsArray = Array.from(this.selectedIds)
     const downloadedSet = new Set(this.jobState.downloadedIds || [])
     const pendingIds = selectedIdsArray.filter((id) => !downloadedSet.has(id))
@@ -206,6 +213,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
       return
     }
 
+    // 依次下载每个选中的作品
     for (const awemeId of pendingIds) {
       if (this.jobStopRequested) {
         this.jobState.status = "paused"
@@ -213,6 +221,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
         this.emit("stateChanged", this)
         return
       }
+      // 从缓存中获取媒体对象
       const media = this.dataService.feedMediaCache.get(awemeId)
       if (!media) {
         console.warn("[dy-dl] 缓存中未找到作品", awemeId)
@@ -221,6 +230,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
         this.emit("countsUpdated", this.getCounts())
         continue
       }
+      // 执行下载（复用 mediaHandler 的下载逻辑）
       const result = await this.mediaHandler._download_media_logic(media, {
         toastTarget: null,
         toast: { update: () => {} },
@@ -232,9 +242,11 @@ export class ProfileDownloadManager extends Emitter<Events> {
       else this.markFailed(media, result?.reason || "download_failed")
       this._saveJobState()
       this.emit("countsUpdated", this.getCounts())
+      // 可选：每下载一个后稍作延迟，避免请求过快
       await new Promise((r) => setTimeout(r, 500))
     }
     if (!this.jobState) return
+    // 任务完成
     this.jobState.status = "completed"
     this.jobState.completedAt = Date.now()
     this._saveJobState()

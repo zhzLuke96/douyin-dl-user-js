@@ -10,15 +10,24 @@ interface AssOptions {
   playResY?: number
 }
 
+/**
+ * 弹幕相关处理
+ */
 export class DanmakuHandler {
+  /** 获取弹幕列表 */
   getDanmakuList(player: any): DanmakuItem[] {
+    // TODO: 从player上取到的只是渲染数据，如果是长视频只包含一部分
+    // 需要监听 aweme/v1/web/danmaku/get_v2 重放该请求，但鉴权复杂目前未实现
     return player?.danmaku?.main?.data || []
   }
 
+  /** 获取视频宽高 */
   getMediaSize(player: any): { width: number; height: number } {
+    // NOTE: 这里主要是获取比例
     return { width: player?.sizeInfo?.width || 1920, height: player?.sizeInfo?.height || 1080 }
   }
 
+  /** 毫秒转 ASS 时间格式 */
   msToAssTime(ms: number): string {
     const totalSec = ms / 1000
     const h = Math.floor(totalSec / 3600)
@@ -27,6 +36,7 @@ export class DanmakuHandler {
     return `${h}:${String(m).padStart(2, "0")}:${s.toFixed(2).padStart(5, "0")}`.replace(/^0:/, "")
   }
 
+  /** 十六进制颜色转 ASS 颜色格式 */
   hexToAssColor(hex: string): string {
     if (!hex || hex === "transparent") return "&H00FFFFFF"
     const c = hex.replace("#", "")
@@ -34,6 +44,9 @@ export class DanmakuHandler {
     return "&H00FFFFFF"
   }
 
+  /**
+   * 将弹幕数据转换为 ASS 文件内容
+   */
   convertDanmakuToAss(list: DanmakuItem[], options: AssOptions = {}): string {
     const { title = "", playResX = 1920, playResY = 1080 } = options
     const header = `[Script Info]
@@ -61,6 +74,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
     return header + "\n" + events
   }
 
+  /**
+   * 获取弹幕 ASS 文件内容
+   */
   getDanmakuAssFileContent(player: any): string | undefined {
     const list = this.getDanmakuList(player)
     if (!list || list.length === 0) {

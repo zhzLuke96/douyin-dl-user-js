@@ -7,6 +7,9 @@ import type { VideoHandler } from "../handlers/VideoHandler"
 import type { DanmakuHandler } from "../handlers/DanmakuHandler"
 import type { ProfilePageHandler } from "../handlers/ProfilePageHandler"
 
+/**
+ * DOM Patcher - 负责DOM监听、注入下载按钮及相关UI元素
+ */
 export class DOMPatcher {
   downloader: Downloader
   mediaHandler: MediaHandler
@@ -16,6 +19,9 @@ export class DOMPatcher {
   private observer: MutationObserver
   feed_card_selector_cls = "dy-dl-feed-selector"
 
+  /**
+   * @param options - 包含各处理器实例的配置对象
+   */
   constructor(options: { downloader: Downloader; mediaHandler: MediaHandler; videoHandler: VideoHandler; danmakuHandler: DanmakuHandler; profilePageHandler: ProfilePageHandler }) {
     this.downloader = options.downloader
     this.mediaHandler = options.mediaHandler
@@ -26,20 +32,26 @@ export class DOMPatcher {
     Config.global.events.on("config_change", this._on_config_change.bind(this))
   }
 
+  /**
+   * 渲染 HTML 字符串为 DOM 元素
+   */
   static render_html(html: string): HTMLElement {
     const div = document.createElement("div")
     div.innerHTML = html.trim()
     return div.children[0] as HTMLElement
   }
 
+  /** 配置变更时同步卡片选择器 */
   private _on_config_change() {
     this._sync_feed_cards()
   }
 
+  /** 同步所有 feed 卡片的选择器状态 */
   private _sync_feed_cards() {
     document.body.querySelectorAll(ProfileDataService.FEED_CARD_SELECTOR).forEach((card) => this._handleProfileCard(card as HTMLElement))
   }
 
+  /** 处理 DOM 变更 */
   private _handleMutations(mutations: MutationRecord[]) {
     mutations.forEach((mutation) => {
       mutation.addedNodes.forEach((node) => {
@@ -71,6 +83,7 @@ export class DOMPatcher {
     })
   }
 
+  /** 处理模态框，注入图片下载按钮 */
   private _handleModal(modalNode: HTMLElement) {
     const close_icon = modalNode.querySelector("#svg_icon_ic_close")
     const img = modalNode.querySelector("img")
@@ -99,6 +112,7 @@ export class DOMPatcher {
     container.appendChild(btn)
   }
 
+  /** 处理 Tooltip，注入表情下载按钮 */
   private _handleTooltip(tooltipNode: HTMLElement) {
     const tc = tooltipNode.querySelector(".semi-tooltip-content") as HTMLElement
     if (!tc || !tc.textContent?.includes("添加到表情")) return
@@ -117,6 +131,7 @@ export class DOMPatcher {
     tc.appendChild(btn)
   }
 
+  /** 处理播放器控件，注入插件菜单 */
   private _handleXgControl(xgNode: HTMLElement) {
     const right_grid = xgNode.querySelector(".xg-right-grid") as HTMLElement
     if (!right_grid) return
@@ -160,6 +175,7 @@ export class DOMPatcher {
     else right_grid.appendChild(db)
   }
 
+  /** 处理个人主页卡片，注入选择器 */
   private _handleProfileCard(card: HTMLElement) {
     const dom = card.querySelector("." + this.feed_card_selector_cls) as HTMLElement
     if (!Config.global.features.enable_profile_downloader) {
@@ -216,6 +232,7 @@ export class DOMPatcher {
     })
   }
 
+  /** 启动 DOM 观察 */
   startObserving() {
     this.observer.observe(document.body, { childList: true, subtree: true })
     document.querySelectorAll("xg-controls").forEach((c) => this._handleXgControl(c as HTMLElement))

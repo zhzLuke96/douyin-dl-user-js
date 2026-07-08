@@ -1,5 +1,6 @@
 import { useState, useEffect } from "preact/hooks"
 
+// #region 事件
 export class Emitter<Events extends Record<string, any[]>> {
   private events = new Map<keyof Events, Set<Function>>()
 
@@ -25,6 +26,7 @@ export class Emitter<Events extends Record<string, any[]>> {
   emit<K extends keyof Events>(event: K, ...args: Events[K]): void {
     const set = this.events.get(event)
     if (!set) return
+    // 防止 emit 过程中修改
     for (const fn of [...set]) {
       fn(...args)
     }
@@ -38,6 +40,9 @@ export class Emitter<Events extends Record<string, any[]>> {
     return this.on(event, wrap)
   }
 
+  /**
+   * 清空某个事件或全部
+   */
   clear(event?: keyof Events): void {
     if (event) {
       this.events.delete(event)
@@ -57,3 +62,4 @@ export class Emitter<Events extends Record<string, any[]>> {
     return state
   }
 }
+// #endregion

@@ -7,6 +7,7 @@ export class FloatingPanel {
   private root: HTMLElement | null = null
   mounted = false
 
+  // 挂载浮动面板到 DOM
   mount({ dataService, downloadManager }: { dataService: ProfileDataService; downloadManager: ProfileDownloadManager }) {
     this.root = document.createElement("div")
     this.root.id = "dy-dl-floating-panel"
@@ -19,6 +20,7 @@ export class FloatingPanel {
     }
   }
 
+  // 卸载浮动面板
   unmount() {
     if (this.root && this.mounted) {
       render(null, this.root)

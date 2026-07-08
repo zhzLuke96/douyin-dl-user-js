@@ -6,6 +6,10 @@ interface LauncherConfig {
   curlTerminal: string
 }
 
+/**
+ * 下载器唤醒工具类
+ * 支持：IDM、Aria2、BitComet、AB Download Manager
+ */
 export class DownloaderLauncher {
   private config: LauncherConfig
   private _idmSeq = 1
@@ -22,6 +26,9 @@ export class DownloaderLauncher {
 
   // ==================== Dir Template ====================
 
+  /**
+   * 简化入口：解析下载目录模板
+   */
   private _resolveDirTemplate(input: string, context: any, fallback = ""): string {
     if (typeof input !== "string" || !input.trim()) return fallback
     if (!input.includes("${") && !input.startsWith("`")) return input
@@ -38,6 +45,9 @@ export class DownloaderLauncher {
 
   // ==================== invoke_download ====================
 
+  /**
+   * 简化入口：调用下载器下载
+   */
   async invoke_download(
     url: string,
     dl_name: "idm" | "aria2" | "bc" | "abdm" = "abdm",
@@ -87,6 +97,9 @@ export class DownloaderLauncher {
 
   // ==================== Config helpers ====================
 
+  /**
+   * 获取默认配置项
+   */
   getDefaultConfig(type: "idm" | "aria2" | "bitcomet" | "abdm"): any {
     const listMap: Record<string, any[]> = {
       idm: this.config.idmList,
@@ -101,6 +114,9 @@ export class DownloaderLauncher {
 
   // ==================== Static utilities ====================
 
+  /**
+   * 标准化请求头：转换为对象，添加常用默认头
+   */
   static normalizeHeaders(headers: Record<string, any> | string = {}, addDefault = false): Record<string, string> {
     if (typeof headers === "string") {
       const raw: Record<string, string> = {}
@@ -137,14 +153,19 @@ export class DownloaderLauncher {
     }
   }
 
-  /** GM_xmlhttpRequest wrapper with CORS support */
+  /**
+   * 可跨域 xmlhttpRequest 请求
+   * 封装 GreaseMonkey-Compatible xmlhttpRequest 实现的跨域请求，支持回调和 await 两种用法
+   */
   static xmlHttpRequest(option: any): any {
     const xhr = typeof GM_xmlhttpRequest === "function" ? GM_xmlhttpRequest : typeof GM?.xmlHttpRequest === "function" ? GM.xmlHttpRequest : null
     if (!xhr || typeof xhr !== "function") throw new Error("GreaseMonkey 兼容 XMLHttpRequest 不可用。")
     return xhr({ withCredentials: true, ...option })
   }
 
-  /** CORS request using GM_xmlhttpRequest */
+  /**
+   * 发送HTTP请求，使用 gm-xmlhttpRequest 发起跨域请求
+   */
   static request_cors(url: string, options: any = {}): Promise<{ status: number; data: any; headers: string }> {
     return new Promise((resolve, reject) => {
       const { method = "GET", headers = {}, body, timeout = 30000, responseType } = options
@@ -175,7 +196,9 @@ export class DownloaderLauncher {
     })
   }
 
-  /** Standard fetch wrapper */
+  /**
+   * 发送HTTP请求，默认用这个请求，不需要权限
+   */
   static async request(url: string, options: any = {}): Promise<{ status: number; data: any }> {
     const response = await fetch(url, options)
     let data: any
@@ -185,6 +208,9 @@ export class DownloaderLauncher {
     return { status: response.status, data }
   }
 
+  /**
+   * 格式化文件大小（用于调试）
+   */
   static formatSize(bytes: number): string {
     if (bytes === 0) return "0 B"
     const k = 1024
@@ -193,6 +219,9 @@ export class DownloaderLauncher {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
+  /**
+   * 生成cURL命令
+   */
   static toCurlCommand(link: string, filename: string, headers: Record<string, string> = {}, terminal = "wc"): string {
     const curlCmd = terminal !== "wp" ? "curl" : "curl.exe"
     const headerArgs = Object.entries(headers)
@@ -202,6 +231,9 @@ export class DownloaderLauncher {
     return `${curlCmd} -L -C - "${link}" -o "${safeFilename}" ${headerArgs}`.trim()
   }
 
+  /**
+   * 生成BC链接（比特彗星专用）
+   */
   static toBitCometLink(link: string, filename: string, headers: Record<string, string> = {}): string {
     const safeFilename = filename.replace(/[!?&|`"'*/:<>\\]/g, "_")
     const query = new URLSearchParams()
@@ -214,6 +246,9 @@ export class DownloaderLauncher {
 
   // ==================== Launchers ====================
 
+  /**
+   * 发送到 IDM
+   */
   async launchIDM(link: string, filename: string, filesize: number, headers: Record<string, any> = {}, idmConfig: any = null): Promise<boolean> {
     const config = { ...this.getDefaultConfig("idm"), ...idmConfig }
     const clientId = config.id
@@ -242,6 +277,9 @@ export class DownloaderLauncher {
     }
   }
 
+  /**
+   * 发送到 Aria2
+   */
   async launchAria2(link: string, filename: string, headers: Record<string, any> = {}, aria2Config: any = null): Promise<boolean> {
     const config = { ...this.getDefaultConfig("aria2"), ...aria2Config }
     const url = `${config.domain}:${config.port}${config.path}`
@@ -257,6 +295,9 @@ export class DownloaderLauncher {
     }
   }
 
+  /**
+   * 发送到比特彗星 (BitComet)
+   */
   async launchBitComet(link: string, filename: string, headers: Record<string, any> = {}, bitcometConfig: any = null): Promise<boolean> {
     const config = { ...this.getDefaultConfig("bitcomet"), ...bitcometConfig }
     const url = `${config.domain}:${config.port}${config.path}`
@@ -281,6 +322,9 @@ export class DownloaderLauncher {
     }
   }
 
+  /**
+   * 发送到 AB Download Manager
+   */
   async launchABDM(link: string, filename: string, headers: Record<string, any> = {}, abdmConfig: any = null): Promise<boolean> {
     const config = { ...this.getDefaultConfig("abdm"), ...abdmConfig }
     const url = `${config.domain}:${config.port}/start-headless-download`
@@ -296,7 +340,7 @@ export class DownloaderLauncher {
     }
   }
 
-  // ==================== Command generators ====================
+  // ==================== 以下是同步命令生成方法（不实际唤醒）====================
 
   getCurlCommand(link: string, filename: string, headers: Record<string, string> = {}): string {
     return DownloaderLauncher.toCurlCommand(link, filename, headers, this.config.curlTerminal)

@@ -1,3 +1,4 @@
+/** callback会在创建element之后调用 */
 export class Modal {
   overlay: HTMLElement
   root: HTMLElement

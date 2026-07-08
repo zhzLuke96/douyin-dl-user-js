@@ -1,6 +1,32 @@
 type CSSObject = { [key: string]: string | number | CSSObject | null | false }
 type CSSInput = CSSObject | Array<CSSObject | null | false>
 
+/**
+ * 创建一个极简 CSS-in-JS 工具
+ *
+ * 说明：
+ * - key: CSS 属性（camelCase）或选择器（如 'span', '&:hover', '.item', '> div'）
+ * - value:
+ *    - string | number → 样式值
+ *    - CSSObject → 嵌套样式
+ *    - null | false → 忽略（用于条件控制）
+ *
+ * 特性：
+ * - 支持嵌套选择器（子元素 / 伪类 / &）
+ * - 支持数组合并（条件样式）
+ * - 自动生成 className（hash）
+ * - 自动去重（相同样式只插入一次）
+ *
+ * @example
+ * const css = createCSS()
+ *
+ * const cls = css({
+ *   color: 'red',
+ *   fontSize: '14px'
+ * })
+ *
+ * el.className = cls
+ */
 export function createCSS(): (input: CSSInput) => string {
   const style = document.createElement("style")
   document.head.appendChild(style)

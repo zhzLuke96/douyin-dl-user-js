@@ -1,3 +1,8 @@
+/**
+ * 创建可定位的 Toast
+ * 目标元素或选择器，用于将 Toast 定位在其正上方；若未提供则显示在右下角
+ * 默认自动消失时间（毫秒），设为 0 则不自动消失
+ */
 export function createToast(target?: HTMLElement | string | null, defaultDuration = 2000): { update: (message: string, duration?: number) => void; close: () => void } {
   let toastEl: HTMLElement | null = null
   let timeoutId: ReturnType<typeof setTimeout> | null = null

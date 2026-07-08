@@ -1,3 +1,6 @@
+/**
+ * 在context下执行代码
+ */
 export function runInContext(context: Record<string, any>, code: string): any {
   const keys = Object.keys(context)
   const head = `const {${keys.join(", ")}} = __CTX__; `
@@ -6,6 +9,9 @@ export function runInContext(context: Record<string, any>, code: string): any {
   return fn(context)
 }
 
+/**
+ * 日期格式化函数
+ */
 export function formatDate(date: Date, format = "YYYY-MM-DD HH:mm:ss"): string {
   const o: Record<string, string> = {
     YYYY: date.getFullYear().toString(),

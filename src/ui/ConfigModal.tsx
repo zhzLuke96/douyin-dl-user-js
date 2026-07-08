@@ -1,3 +1,4 @@
+// 配置弹窗组件
 import { useState, useEffect } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
 import { theme } from "../utils/theme"
@@ -203,6 +204,7 @@ const FeatureRow = ({ cfg, meta }: { cfg: any; meta: (typeof featuresMeta)[0] })
   )
 }
 
+// 基本设置页
 const SettingsTab = ({ cfg, onSave }: { cfg: any; onSave: () => void }) => (
   <div>
     {featuresMeta.map((m) => (
@@ -216,6 +218,7 @@ const SettingsTab = ({ cfg, onSave }: { cfg: any; onSave: () => void }) => (
   </div>
 )
 
+// 下载历史页
 const HistoryTab = () => {
   const [hist, setHist] = useState<any[]>([])
   useEffect(() => {
@@ -240,6 +243,7 @@ const HistoryTab = () => {
   )
 }
 
+// ========== 下载器配置 Tab ==========
 const DownloaderConfigTab = ({ cfg }: { cfg: any }) => {
   const dc = cfg.downloader_config
   const dlType = cfg.using_downloader
@@ -279,6 +283,7 @@ const tabs = [
   { id: "history", title: "下载历史", Comp: HistoryTab },
 ]
 
+// 主组件
 export const ConfigModalApp = ({ config }: { config: Config }) => {
   const [tab, setTab] = useState("settings")
   const [cfg, setCfg] = useState(() => config.clone_features())

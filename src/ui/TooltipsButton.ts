@@ -11,6 +11,10 @@ function renderHtml(html: string): HTMLElement {
   return div.children[0] as HTMLElement
 }
 
+/**
+ * 带有 hover 的按钮
+ * NOTE: dy-dl-video-btn 是用于标记是否注入用的
+ */
 export class TooltipsButton {
   label: string
   items: TooltipItem[]

@@ -1,11 +1,16 @@
+/**
+ * 和视频相关的操作，比如截图当前视频帧
+ */
 export class VideoHandler {
   private _frameBlob: Blob | null = null
 
+  /** 获取当前可见的视频元素 */
   private getVideoElement(): HTMLVideoElement | null {
     const player = (window as any).player || (typeof unsafeWindow !== "undefined" && (unsafeWindow as any).player)
     return player?.video || document.querySelector("video")
   }
 
+  /** 截取当前视频帧，返回 Blob 和 DataURL */
   getCurrentFrame(): { blob: Blob; url: string } | null {
     const video = this.getVideoElement()
     if (!video) return null
@@ -21,6 +26,7 @@ export class VideoHandler {
     return { blob: this._frameBlob!, url }
   }
 
+  /** 复制当前视频帧到剪贴板 */
   async copy_current_frame() {
     const video = this.getVideoElement()
     if (!video) {
@@ -51,6 +57,7 @@ export class VideoHandler {
     }
   }
 
+  /** 下载当前视频帧 */
   async download_current_frame() {
     const video = this.getVideoElement()
     if (!video) {

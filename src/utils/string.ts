@@ -1,3 +1,10 @@
+/**
+ * 规范化文件名，移除非法字符，处理保留名称，限制长度
+ * 原始文件名（不包含路径）
+ * 可选配置：
+ * - replacementChar: 替换非法字符的字符
+ * - maxLength: 最大文件名长度（不含扩展名的部分会优先截断）
+ */
 export function normalizeFilename(name: string, options: { replacementChar?: string; maxLength?: number } = {}): string {
   const { replacementChar = "_", maxLength = 255 } = options
   if (typeof name !== "string") return ""
@@ -42,6 +49,9 @@ export function normalizeFilename(name: string, options: { replacementChar?: str
   return result
 }
 
+/**
+ * 判断是否为作者主页路径
+ */
 export function isProfilePagePath(pathname = location.pathname): boolean {
   return pathname.startsWith("/user/")
 }

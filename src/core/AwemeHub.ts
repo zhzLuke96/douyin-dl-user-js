@@ -7,6 +7,9 @@ export class AwemeHub {
     this._init_interceptor()
   }
 
+  /**
+   * 初始化拦截器
+   */
   private _init_interceptor() {
     const pathname = (pn: string) => (url: string) => {
       try {

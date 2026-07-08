@@ -1,3 +1,6 @@
+/**
+ * 全局主题对象
+ */
 export const theme = {
   colors: {
     primary: "#fe2c55",
