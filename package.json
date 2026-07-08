@@ -1,17 +1,31 @@
 {
   "name": "douyin-dl-user-js",
-  "version": "1.0.0",
+  "version": "1.4.3",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node build.mjs --watch",
+    "build": "node build.mjs",
+    "build:minify": "node build.mjs --minify",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.12.4",
   "dependencies": {
-    "htm": "^3.1.1",
     "preact": "^10.28.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "esbuild": "^0.28.1",
+    "eslint": "^10.6.0",
+    "prettier": "^3.9.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0"
   }
 }

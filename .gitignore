@@ -128,3 +128,11 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+
+# 本地开发文档
+docs/dev/
+
+# Editor
+# Tooling
+.eslintcache
