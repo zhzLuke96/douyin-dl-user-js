@@ -35,6 +35,7 @@ const config = {
   target: "es2020",
   banner: { js: USERSCRIPT_HEADER },
   keepNames: true,
+  charset: "utf8",
   minifySyntax: isMinify,
   minifyWhitespace: isMinify,
   define: {
