@@ -41,6 +41,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
 
   collect() {
     if (!this.dataService.isProfilePage()) return
+    this._ensureJobState()
     const prev = this.jobState?.knownIds.length || 0
     const mediaList = this.dataService.collectCurrentFeedMedia()
     this.mergeMediaIntoState(mediaList)
@@ -132,6 +133,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
   }
 
   getSnapshot(profileNameFallback = "当前作者主页") {
+    if (!this.jobState) this._ensureJobState()
     const isProfilePage = this.dataService.isProfilePage()
     const profile = !this.jobRunning && isProfilePage ? this.dataService.getProfileContext() : null
     const profileName = this.jobState?.profileName || profile?.profileName || profileNameFallback
