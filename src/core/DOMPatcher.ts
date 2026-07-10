@@ -41,6 +41,18 @@ export class DOMPatcher {
     return div.children[0] as HTMLElement
   }
 
+  /** 从节点向上遍历 DOM 树查找 img 元素 */
+  static findImage(node: HTMLElement): HTMLImageElement | null {
+    let img: HTMLImageElement | null
+    let current: HTMLElement | null = node
+    while (current) {
+      img = current.querySelector("img")
+      if (img) return img
+      current = current.parentElement instanceof HTMLElement ? current.parentElement : null
+    }
+    return null
+  }
+
   /** 配置变更时同步卡片选择器 */
   private _on_config_change() {
     this._sync_feed_cards()
@@ -116,7 +128,7 @@ export class DOMPatcher {
   private _handleTooltip(tooltipNode: HTMLElement) {
     const tc = tooltipNode.querySelector(".semi-tooltip-content") as HTMLElement
     if (!tc || !tc.textContent?.includes("添加到表情")) return
-    const imgNode = DOMPatcher.render_html(tooltipNode.outerHTML).querySelector("img")
+    const imgNode = DOMPatcher.findImage(tooltipNode)
     if (!imgNode?.src) return
     const existing = tc.querySelector(".download-button")
     if (existing) return

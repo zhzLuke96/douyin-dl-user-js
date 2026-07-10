@@ -8,13 +8,13 @@ export class FloatingPanel {
   mounted = false
 
   // 挂载浮动面板到 DOM
-  mount({ dataService, downloadManager }: { dataService: ProfileDataService; downloadManager: ProfileDownloadManager }) {
+  mount({ dataService, downloadManager, onOpenSettings }: { dataService: ProfileDataService; downloadManager: ProfileDownloadManager; onOpenSettings?: () => void }) {
     this.root = document.createElement("div")
     this.root.id = "dy-dl-floating-panel"
     document.body.appendChild(this.root)
     this.mounted = true
     try {
-      render(<FloatingPanelApp dataService={dataService} downloadManager={downloadManager} />, this.root)
+      render(<FloatingPanelApp dataService={dataService} downloadManager={downloadManager} onOpenSettings={onOpenSettings} />, this.root)
     } catch (e) {
       console.error("[dy-dl] FloatingPanelUI 加载失败", e)
     }

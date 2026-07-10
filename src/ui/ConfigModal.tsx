@@ -1,7 +1,9 @@
 // 配置弹窗组件
-import { useState, useEffect } from "preact/hooks"
+import { useState, useEffect, useMemo } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
 import { theme } from "../utils/theme"
+import { DownloadHistory } from "../core/DownloadHistory"
+import { runInContext, formatDate } from "../utils/format"
 import type { Config } from "../core/Config"
 
 const cssFn = createCSS()
@@ -27,6 +29,7 @@ const c = {
     fontWeight: "normal",
     color: theme.colors.textSecondary,
     transition: "0.2s",
+    "&:hover": { background: "rgba(255,255,255,0.05)" },
   }),
   navBtnActive: cssFn({ background: "rgba(255,255,255,0.08)", borderBottomColor: theme.colors.primary, fontWeight: "bold", color: theme.colors.primary }),
   content: cssFn({ flexGrow: 1, overflowY: "auto", padding: theme.spacing.xl }),
@@ -78,6 +81,11 @@ const c = {
     borderRadius: theme.borderRadius.sm,
     padding: theme.spacing.xs + " " + theme.spacing.sm,
     fontSize: theme.fontSize.xs,
+    "& option": {
+      background: "#2c2c2e",
+      color: theme.colors.textPrimary,
+      padding: theme.spacing.sm,
+    },
   }),
   input: cssFn({
     background: "rgba(255,255,255,0.08)",
@@ -88,202 +96,422 @@ const c = {
     fontSize: theme.fontSize.xs,
     flexGrow: 1,
     minWidth: 0,
+    "&:focus": { borderColor: theme.colors.primary },
   }),
+  table: cssFn({ width: "100%", borderCollapse: "collapse", fontSize: theme.fontSize.xs }),
+  th: cssFn({ textAlign: "left", padding: theme.spacing.sm, borderBottom: "1px solid " + theme.colors.borderMedium, color: theme.colors.textMuted, fontWeight: 600 }),
+  td: cssFn({ padding: theme.spacing.sm, borderBottom: "1px solid " + theme.colors.borderLight, verticalAlign: "top" }),
+  range: cssFn({ flexGrow: 1, accentColor: theme.colors.primary, cursor: "pointer" }),
+  rangeValue: cssFn({ minWidth: "32px", textAlign: "right", fontSize: theme.fontSize.xs, color: theme.colors.textSecondary }),
+  flexBetween: cssFn({ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.sm }),
+  hintText: cssFn({ fontSize: "11px", color: theme.colors.textDim, marginTop: theme.spacing.xs, padding: theme.spacing.xs + " 0", lineHeight: 1.5 }),
+  codeBlock: cssFn({
+    background: "rgba(0,0,0,0.3)",
+    borderRadius: theme.borderRadius.sm,
+    padding: "4px " + theme.spacing.sm,
+    fontSize: "11px",
+    color: theme.colors.textSecondary,
+    fontFamily: "monospace",
+    wordBreak: "break-all",
+  }),
+  hr: cssFn({ border: "none", borderTop: "1px solid " + theme.colors.borderLight, margin: theme.spacing.sm + " 0" }),
 }
 const navCls = (a: boolean) => (a ? c.navBtnBase + " " + c.navBtnActive : c.navBtnBase)
 
-const featuresMeta: { key: string; label: string; type: "select" | "input" | "number"; options?: { label: string; value: string }[] }[] = [
-  {
-    key: "using_downloader",
-    label: "下载器",
-    type: "select",
-    options: [
-      { label: "浏览器", value: "browser" },
-      { label: "IDM", value: "idm" },
-      { label: "Aria2", value: "aria2" },
-      { label: "BitComet", value: "bc" },
-      { label: "AB Download Manager", value: "abdm" },
-    ],
-  },
-  {
-    key: "download_video_mode",
-    label: "下载视频分辨率策略",
-    type: "select",
-    options: [
-      { label: "默认", value: "default" },
-      { label: "最高清晰度", value: "max" },
-      { label: "最低清晰度", value: "min" },
-      { label: "1080P", value: "1080P" },
-      { label: "720P", value: "720P" },
-      { label: "540P", value: "540P" },
-      { label: "360P", value: "360P" },
-      { label: "2K", value: "2K" },
-      { label: "4K", value: "4K" },
-      { label: "最大文件", value: "max_file" },
-      { label: "最小文件", value: "min_file" },
-    ],
-  },
-  {
-    key: "video_download_codecs",
-    label: "视频编码偏好",
-    type: "select",
-    options: [
-      { label: "默认", value: "default" },
-      { label: "H.264", value: "h264" },
-      { label: "H.265", value: "h265" },
-      { label: "优先H.264", value: "h264_prefer" },
-      { label: "优先H.265", value: "h265_prefer" },
-    ],
-  },
-  {
-    key: "image_convert_codecs",
-    label: "图片转码格式",
-    type: "select",
-    options: [
-      { label: "默认", value: "default" },
-      { label: "PNG", value: "png" },
-      { label: "JPG", value: "jpg" },
-      { label: "WebP", value: "webp" },
-    ],
-  },
-  {
-    key: "image_resize_codecs",
-    label: "图片尺寸限制",
-    type: "select",
-    options: [
-      { label: "默认", value: "default" },
-      { label: "2K(2048px)", value: "2k_max" },
-      { label: "1K(1024px)", value: "1k_max" },
-      { label: "960px", value: "960_max" },
-      { label: "640px", value: "640_max" },
-      { label: "512px", value: "512_max" },
-    ],
-  },
-  { key: "image_quality", label: "图片质量(1-100)", type: "number" },
-  { key: "filename_template", label: "文件名模板", type: "input" },
-  { key: "filename_max_length", label: "最大文件名长度", type: "number" },
-  {
-    key: "enable_profile_downloader",
-    label: "开启作者页下载器",
-    type: "select",
-    options: [
-      { label: "关闭", value: "false" },
-      { label: "开启", value: "true" },
-    ],
-  },
-]
-
-const FeatureRow = ({ cfg, meta }: { cfg: any; meta: (typeof featuresMeta)[0] }) => {
-  const val = cfg[meta.key]
-  const renderInput = () => {
-    if (meta.type === "select")
-      return (
-        <select
-          className={c.select}
-          value={String(val)}
-          onChange={(e) =>
-            (cfg[meta.key] =
-              (e.target as HTMLSelectElement).value === "true" ? true : (e.target as HTMLSelectElement).value === "false" ? false : (e.target as HTMLSelectElement).value)
-          }
-        >
-          {meta.options!.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      )
-    if (meta.type === "number") return <input className={c.input} type="number" value={val} onChange={(e) => (cfg[meta.key] = Number((e.target as HTMLInputElement).value))} />
-    return <input className={c.input} value={val} onChange={(e) => (cfg[meta.key] = (e.target as HTMLInputElement).value)} />
+// ========== helper ==========
+const toShortId = (bigintStr: string): string => {
+  try {
+    return BigInt(bigintStr).toString(36)
+  } catch {
+    return bigintStr
   }
+}
+
+const mockMedia = {
+  authorInfo: { nickname: "\u793a\u4f8b\u7528\u6237" },
+  awemeId: "1234567890123456789",
+  desc: "\u8fd9\u662f\u4e00\u4e2a\u793a\u4f8b\u89c6\u9891\u63cf\u8ff0 #tag1 #tag2",
+  textExtra: [{ hashtagName: "tag1" }, { hashtagName: "tag2" }],
+  authorUserId: "12345",
+  createTime: Date.now() / 1000,
+}
+
+const previewFilename = (template: string, maxLen: number): string => {
+  const {
+    authorInfo: { nickname },
+    awemeId,
+    desc,
+    textExtra,
+  } = mockMedia
+  const short_id = toShortId(awemeId)
+  const tag_list = textExtra?.map((x: any) => x.hashtagName).filter(Boolean) || []
+  const tags = tag_list.map((x: string) => "#" + x).join("_")
+  let rawDesc = desc || ""
+  tag_list.forEach((t: string) => {
+    rawDesc = rawDesc.replace(new RegExp("#" + t + "\\s*", "g"), "")
+  })
+  rawDesc = rawDesc.trim().replace(/[#/?<>\\:*|":]/g, "")
+  const now_date = new Date()
+  const create_date = new Date(Number(mockMedia.createTime) * 1000)
+  const ctx: any = {
+    nickname,
+    short_id,
+    tags,
+    desc: rawDesc,
+    aweme_id: awemeId,
+    media: mockMedia,
+    author_info: mockMedia.authorInfo,
+    uid: mockMedia.authorUserId,
+    music_name: "",
+    now_date,
+    create_date,
+    now_YYYYMMDD: formatDate(now_date, "YYYYMMDD"),
+    now_YYYYMMDD_HHmmss: formatDate(now_date, "YYYYMMDD_HHmmss"),
+    create_date_YYYYMMDD: formatDate(create_date, "YYYYMMDD"),
+    create_date_YYYYMMDD_HHmmss: formatDate(create_date, "YYYYMMDD_HHmmss"),
+  }
+  let base
+  try {
+    base = runInContext(ctx, template)
+  } catch {
+    base = runInContext(ctx, "`${nickname}_${short_id}_${tags}_${desc}`")
+  }
+  if (base.length > maxLen) base = base.slice(0, maxLen)
+  return base.replace(/\./g, "_")
+}
+
+// ========== SettingsTab ==========
+const SettingsTab = ({ cfg, onSave }: { cfg: any; onSave: () => void }) => {
+  const filenamePreview = useMemo(() => previewFilename(cfg.filename_template, cfg.filename_max_length), [cfg.filename_template, cfg.filename_max_length])
   return (
-    <div className={c.row}>
-      <span className={c.label}>{meta.label}</span>
-      <div style={{ flexGrow: 1 }}>{renderInput()}</div>
+    <div>
+      <div style={{ textAlign: "right", marginBottom: theme.spacing.md }}>
+        <button className={c.btn} onClick={onSave}>
+          \u4fdd\u5b58\u8bbe\u7f6e
+        </button>
+      </div>
+      <fieldset className={c.fieldset}>
+        <legend className={c.legend}>\u4e0b\u8f7d\u5668\u914d\u7f6e</legend>
+        <div className={c.row}>
+          <span className={c.label}>\u4e0b\u8f7d\u5668</span>
+          <select className={c.select} value={cfg.using_downloader} onChange={(e) => (cfg.using_downloader = (e.target as HTMLSelectElement).value)}>
+            <option value="browser">\u6d4f\u89c8\u5668</option>
+            <option value="idm">IDM</option>
+            <option value="aria2">Aria2</option>
+            <option value="bc">BitComet</option>
+            <option value="abdm">AB Download Manager</option>
+          </select>
+        </div>
+        <div className={c.hintText}>
+          \u5982\u679c\u9009\u62e9\u975e\u6d4f\u89c8\u5668\u4e0b\u8f7d\uff0c\u4e4b\u540e\u7684\u4e0b\u8f7d\u5c06\u4f1a\u53d1\u8d77rpc\u8c03\u7528\u4f60\u90e8\u7f72\u7684\u5916\u90e8\u4e0b\u8f7d\u5668\u3002\u6ce8\u610f\uff1a\u4f7f\u7528\u5916\u90e8\u4e0b\u8f7d\u5668\u65f6\uff0c\u56fe\u7247\u538b\u7f29\u8f6c\u7801\u529f\u80fd\u4e0d\u53ef\u7528\u3002
+        </div>
+      </fieldset>
+      <fieldset className={c.fieldset}>
+        <legend className={c.legend}>\u6587\u4ef6\u547d\u540d</legend>
+        <div className={c.row}>
+          <span className={c.label}>\u6587\u4ef6\u540d\u6a21\u677f</span>
+          <input className={c.input} value={cfg.filename_template} onChange={(e) => (cfg.filename_template = (e.target as HTMLInputElement).value)} />
+        </div>
+        <div className={c.hintText}>
+          \u53ef\u7528\u53d8\u91cf\uff1a<span className={c.codeBlock}>nickname</span> <span className={c.codeBlock}>short_id</span> <span className={c.codeBlock}>tags</span>{" "}
+          <span className={c.codeBlock}>desc</span> <span className={c.codeBlock}>aweme_id</span> <span className={c.codeBlock}>create_date_YYYYMMDD</span>{" "}
+          <span className={c.codeBlock}>now_YYYYMMDD_HHmmss</span>
+        </div>
+        <div className={c.row}>
+          <span className={c.label}>\u6587\u4ef6\u540d\u957f\u5ea6</span>
+          <input className={c.input} type="number" value={cfg.filename_max_length} onChange={(e) => (cfg.filename_max_length = Number((e.target as HTMLInputElement).value))} />
+        </div>
+        <div className={c.row}>
+          <span className={c.label}>\u9884\u89c8</span>
+          <span className={c.codeBlock}>{filenamePreview || "(\u65e0\u6cd5\u9884\u89c8)"}</span>
+        </div>
+      </fieldset>
+      <fieldset className={c.fieldset}>
+        <legend className={c.legend}>\u89c6\u9891\u4e0b\u8f7d\u8bbe\u7f6e</legend>
+        <div className={c.row}>
+          <span className={c.label}>\u5206\u8fa8\u7387\u7b56\u7565</span>
+          <select className={c.select} value={cfg.download_video_mode} onChange={(e) => (cfg.download_video_mode = (e.target as HTMLSelectElement).value)}>
+            <option value="default">\u9ed8\u8ba4</option>
+            <option value="max">\u6700\u9ad8\u6e05\u6670\u5ea6</option>
+            <option value="min">\u6700\u4f4e\u6e05\u6670\u5ea6</option>
+            <option value="1080P">1080P</option>
+            <option value="720P">720P</option>
+            <option value="540P">540P</option>
+            <option value="360P">360P</option>
+            <option value="2K">2K</option>
+            <option value="4K">4K</option>
+            <option value="max_file">\u6700\u5927\u6587\u4ef6</option>
+            <option value="min_file">\u6700\u5c0f\u6587\u4ef6</option>
+          </select>
+        </div>
+        <div className={c.row}>
+          <span className={c.label}>\u7f16\u7801\u504f\u597d</span>
+          <select className={c.select} value={cfg.video_download_codecs} onChange={(e) => (cfg.video_download_codecs = (e.target as HTMLSelectElement).value)}>
+            <option value="default">\u9ed8\u8ba4</option>
+            <option value="h264">H.264</option>
+            <option value="h265">H.265</option>
+            <option value="h264_prefer">\u4f18\u5148H.264</option>
+            <option value="h265_prefer">\u4f18\u5148H.265</option>
+          </select>
+        </div>
+        <div className={c.hintText}>
+          \u6ce8\u610f\uff1a\u5b9e\u9645\u4e0b\u8f7d\u65f6\u6839\u636e\u53ef\u7528\u5730\u5740\u5339\u914d\uff0c\u5e76\u975e\u6240\u6709\u89c6\u9891\u90fd\u63d0\u4f9b\u6240\u6709\u7f16\u7801\u3002
+        </div>
+      </fieldset>
+      <fieldset className={c.fieldset}>
+        <legend className={c.legend}>\u56fe\u7247\u4e0b\u8f7d\u8bbe\u7f6e</legend>
+        <div className={c.row}>
+          <span className={c.label}>\u8f6c\u7801\u683c\u5f0f</span>
+          <select className={c.select} value={cfg.image_convert_codecs} onChange={(e) => (cfg.image_convert_codecs = (e.target as HTMLSelectElement).value)}>
+            <option value="default">\u9ed8\u8ba4</option>
+            <option value="png">PNG</option>
+            <option value="jpg">JPG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </div>
+        <div className={c.row}>
+          <span className={c.label}>\u5c3a\u5bf8\u9650\u5236</span>
+          <select className={c.select} value={cfg.image_resize_codecs} onChange={(e) => (cfg.image_resize_codecs = (e.target as HTMLSelectElement).value)}>
+            <option value="default">\u9ed8\u8ba4</option>
+            <option value="2k_max">2K(2048px)</option>
+            <option value="1k_max">1K(1024px)</option>
+            <option value="960_max">960px</option>
+            <option value="640_max">640px</option>
+            <option value="512_max">512px</option>
+          </select>
+        </div>
+        <div className={c.flexBetween}>
+          <span className={c.label}>\u56fe\u7247\u8d28\u91cf</span>
+          <span className={c.rangeValue}>{cfg.image_quality}%</span>
+        </div>
+        <input className={c.range} type="range" min="1" max="100" value={cfg.image_quality} onChange={(e) => (cfg.image_quality = Number((e.target as HTMLInputElement).value))} />
+        <div className={c.hintText}>
+          \u6ce8\u610f\uff1a\u538b\u7f29\u7387\u4ec5\u5f53\u8f6c\u7801\u6216\u5c3a\u5bf8\u538b\u7f29\u5f00\u542f\u65f6\u751f\u6548\uff0c\u63a8\u8350 60% \u4ee5\u4e0a\u3002
+        </div>
+      </fieldset>
+      <div style={{ textAlign: "right", marginTop: theme.spacing.lg, paddingTop: theme.spacing.md, borderTop: "1px solid " + theme.colors.borderLight }}>
+        <button className={c.btn} onClick={onSave}>
+          \u4fdd\u5b58\u914d\u7f6e
+        </button>
+      </div>
     </div>
   )
 }
 
-// 基本设置页
-const SettingsTab = ({ cfg, onSave }: { cfg: any; onSave: () => void }) => (
-  <div>
-    {featuresMeta.map((m) => (
-      <FeatureRow key={m.key} cfg={cfg} meta={m} />
-    ))}
-    <div style={{ textAlign: "right", marginTop: theme.spacing.lg, paddingTop: theme.spacing.md, borderTop: "1px solid " + theme.colors.borderLight }}>
-      <button className={c.btn} onClick={onSave}>
-        保存配置
-      </button>
-    </div>
-  </div>
-)
+// ========== DownloaderConfigTab ==========
+const DownloaderConfigTab = ({ cfg }: { cfg: any }) => {
+  const dlType = cfg.using_downloader
+  const dc = cfg.downloader_config
+  if (dlType === "browser") return <div>\u6d4f\u89c8\u5668\u4e0b\u8f7d\u65e0\u9700\u989d\u5916\u914d\u7f6e</div>
+  const setField = (path: string, val: string) => {
+    const parts = path.split(".")
+    let obj = dc[dlType]
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (typeof obj[parts[i]] !== "object") obj[parts[i]] = {}
+      obj = obj[parts[i]]
+    }
+    obj[parts[parts.length - 1]] = val
+    cfg.downloader_config = { ...dc }
+  }
+  const resetDefaults = () => {
+    if (!confirm("\u91cd\u7f6e\u4e3a\u9ed8\u8ba4\u914d\u7f6e\uff1f")) return
+    cfg.downloader_config = JSON.parse(
+      JSON.stringify({
+        browser: {},
+        idm: { id: "1" },
+        aria2: {
+          dir: { video: "\u0060./douyin/${user_dir}/videos\u0060", image: "\u0060./douyin/${user_dir}/images\u0060", other: "\u0060./douyin/${user_dir}/others\u0060" },
+          domain: "http://localhost",
+          port: "6800",
+          path: "/jsonrpc",
+          token: "",
+        },
+        bc: {
+          dir: { video: "\u0060./douyin/${user_dir}/videos\u0060", image: "\u0060./douyin/${user_dir}/images\u0060", other: "\u0060./douyin/${user_dir}/others\u0060" },
+          domain: "http://localhost",
+          port: "8080",
+          path: "/panel/task_add_httpftp_result",
+          authName: "",
+          authPass: "",
+        },
+        abdm: {
+          dir: { video: "\u0060./douyin/${user_dir}/videos\u0060", image: "\u0060./douyin/${user_dir}/images\u0060", other: "\u0060./douyin/${user_dir}/others\u0060" },
+          domain: "http://localhost",
+          port: "15151",
+        },
+      }),
+    )
+  }
+  const dcfg = dc[dlType]
+  if (!dcfg) return <div>\u672a\u77e5\u4e0b\u8f7d\u5668</div>
 
-// 下载历史页
+  const renderDirFields = () => (
+    <>
+      <div className={c.row}>
+        <span className={c.label}>\u89c6\u9891\u76ee\u5f55</span>
+        <input className={c.input} value={dcfg.dir?.video || ""} onChange={(e) => setField("dir.video", (e.target as HTMLInputElement).value)} />
+      </div>
+      <div className={c.row}>
+        <span className={c.label}>\u56fe\u7247\u76ee\u5f55</span>
+        <input className={c.input} value={dcfg.dir?.image || ""} onChange={(e) => setField("dir.image", (e.target as HTMLInputElement).value)} />
+      </div>
+      <div className={c.row}>
+        <span className={c.label}>\u5176\u4ed6\u76ee\u5f55</span>
+        <input className={c.input} value={dcfg.dir?.other || ""} onChange={(e) => setField("dir.other", (e.target as HTMLInputElement).value)} />
+      </div>
+    </>
+  )
+
+  return (
+    <div>
+      {dlType === "abdm" && (
+        <fieldset className={c.fieldset}>
+          <legend className={c.legend}>AB Download Manager</legend>
+          <div className={c.row}>
+            <span className={c.label}>Domain</span>
+            <input className={c.input} value={dcfg.domain || ""} onChange={(e) => setField("domain", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Port</span>
+            <input className={c.input} value={dcfg.port || ""} onChange={(e) => setField("port", (e.target as HTMLInputElement).value)} />
+          </div>
+          {renderDirFields()}
+        </fieldset>
+      )}
+      {dlType === "aria2" && (
+        <fieldset className={c.fieldset}>
+          <legend className={c.legend}>Aria2</legend>
+          <div className={c.row}>
+            <span className={c.label}>Domain</span>
+            <input className={c.input} value={dcfg.domain || ""} onChange={(e) => setField("domain", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Port</span>
+            <input className={c.input} value={dcfg.port || ""} onChange={(e) => setField("port", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Path</span>
+            <input className={c.input} value={dcfg.path || ""} onChange={(e) => setField("path", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Token</span>
+            <input className={c.input} value={dcfg.token || ""} onChange={(e) => setField("token", (e.target as HTMLInputElement).value)} />
+          </div>
+          {renderDirFields()}
+        </fieldset>
+      )}
+      {dlType === "idm" && (
+        <fieldset className={c.fieldset}>
+          <legend className={c.legend}>IDM</legend>
+          <div className={c.row}>
+            <span className={c.label}>ID</span>
+            <input className={c.input} value={dcfg.id || ""} onChange={(e) => setField("id", (e.target as HTMLInputElement).value)} />
+          </div>
+        </fieldset>
+      )}
+      {dlType === "bc" && (
+        <fieldset className={c.fieldset}>
+          <legend className={c.legend}>BitComet</legend>
+          <div className={c.row}>
+            <span className={c.label}>Domain</span>
+            <input className={c.input} value={dcfg.domain || ""} onChange={(e) => setField("domain", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Port</span>
+            <input className={c.input} value={dcfg.port || ""} onChange={(e) => setField("port", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Path</span>
+            <input className={c.input} value={dcfg.path || ""} onChange={(e) => setField("path", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Auth Name</span>
+            <input className={c.input} value={dcfg.authName || ""} onChange={(e) => setField("authName", (e.target as HTMLInputElement).value)} />
+          </div>
+          <div className={c.row}>
+            <span className={c.label}>Auth Pass</span>
+            <input className={c.input} type="password" value={dcfg.authPass || ""} onChange={(e) => setField("authPass", (e.target as HTMLInputElement).value)} />
+          </div>
+          {renderDirFields()}
+        </fieldset>
+      )}
+      <div className={c.hintText}>
+        \u6ce8\u610f\uff1a\u9700\u8981\u5728\u57fa\u672c\u8bbe\u7f6e\u4e2d\u9009\u62e9\u5bf9\u5e94\u7684\u4e0b\u8f7d\u5668\u540e\uff0c\u6b64\u5904\u914d\u7f6e\u624d\u4f1a\u751f\u6548\u3002
+      </div>
+      <div style={{ display: "flex", gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
+        <button className={c.btn} onClick={() => alert("\u914d\u7f6e\u5df2\u4fdd\u5b58")}>
+          \u4fdd\u5b58
+        </button>
+        <button className={c.btnDanger} onClick={resetDefaults}>
+          \u91cd\u7f6e\u9ed8\u8ba4
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ========== HistoryTab ==========
 const HistoryTab = () => {
   const [hist, setHist] = useState<any[]>([])
   useEffect(() => {
-    try {
-      const d = localStorage.getItem("__douyin-dl-history__")
-      setHist(d ? JSON.parse(d) : [])
-    } catch {
-      setHist([])
-    }
+    setHist(DownloadHistory.get())
   }, [])
-  return hist.length === 0 ? (
-    <div style={{ textAlign: "center", padding: theme.spacing.xl, color: theme.colors.textDim }}>暂无下载历史</div>
-  ) : (
-    <div>
-      {hist.map((h, i) => (
-        <div key={i} className={c.row}>
-          <span className={c.value}>{h.desc || "无描述"}</span>
-          <span className={c.value}>{new Date(h.downloadTime).toLocaleString()}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ========== 下载器配置 Tab ==========
-const DownloaderConfigTab = ({ cfg }: { cfg: any }) => {
-  const dc = cfg.downloader_config
-  const dlType = cfg.using_downloader
-  if (dlType === "browser") return <div>浏览器下载无需额外配置</div>
-  const dcfg = dc[dlType]
-  if (!dcfg) return <div>未知下载器</div>
+  const clearHist = () => {
+    if (!confirm("\u786e\u8ba4\u6e05\u7a7a\u6240\u6709\u4e0b\u8f7d\u8bb0\u5f55\uff1f")) return
+    DownloadHistory.clear()
+    setHist([])
+  }
   return (
     <div>
-      {Object.entries(dcfg).map(([k, v]: [string, any]) => (
-        <div key={k} className={c.row}>
-          <span className={c.label}>{k}</span>
-          <div style={{ flexGrow: 1 }}>
-            {typeof v === "object" ? (
-              <pre className={c.value} style={{ fontSize: "11px" }}>
-                {JSON.stringify(v, null, 2)}
-              </pre>
-            ) : (
-              <input
-                className={c.input}
-                value={String(v)}
-                onChange={(e) => {
-                  dcfg[k] = (e.target as HTMLInputElement).value
-                  cfg.downloader_config = { ...dc }
-                }}
-              />
-            )}
-          </div>
-        </div>
-      ))}
+      <div className={c.flexBetween} style={{ marginBottom: theme.spacing.md }}>
+        <span style={{ fontWeight: "bold", fontSize: theme.fontSize.sm }}>\u4e0b\u8f7d\u8bb0\u5f55\uff08\u6700\u591a50\u6761\uff09</span>
+        {hist.length > 0 && (
+          <button className={c.btnDanger} onClick={clearHist}>
+            \u6e05\u7a7a
+          </button>
+        )}
+      </div>
+      {hist.length === 0 ? (
+        <div style={{ textAlign: "center", padding: theme.spacing.xl, color: theme.colors.textDim }}>\u6682\u65e0\u4e0b\u8f7d\u8bb0\u5f55</div>
+      ) : (
+        <table className={c.table}>
+          <thead>
+            <tr>
+              <th className={c.th}>\u63cf\u8ff0</th>
+              <th className={c.th}>\u5206\u4eab\u94fe\u63a5</th>
+              <th className={c.th}>\u4e0b\u8f7d\u65f6\u95f4</th>
+            </tr>
+          </thead>
+          <tbody>
+            {hist.map((h, i) => (
+              <tr key={i}>
+                <td className={c.td}>{h.desc || "(\u65e0\u63cf\u8ff0)"}</td>
+                <td className={c.td}>
+                  {h.shareUrl ? (
+                    <a href={h.shareUrl} target="_blank" rel="noopener noreferrer" style={{ color: theme.colors.primary }}>
+                      \u94fe\u63a5
+                    </a>
+                  ) : (
+                    "-"
+                  )}
+                </td>
+                <td className={c.td}>{h.downloadTime ? new Date(h.downloadTime).toLocaleString() : "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }
 
+// ========== Tabs ==========
 const tabs = [
-  { id: "settings", title: "基本设置", Comp: SettingsTab },
-  { id: "downloader", title: "下载器配置", Comp: DownloaderConfigTab },
-  { id: "history", title: "下载历史", Comp: HistoryTab },
+  { id: "settings", title: "\u57fa\u672c\u8bbe\u7f6e", Comp: SettingsTab },
+  { id: "downloader", title: "\u4e0b\u8f7d\u5668\u914d\u7f6e", Comp: DownloaderConfigTab },
+  { id: "history", title: "\u4e0b\u8f7d\u5386\u53f2", Comp: HistoryTab },
 ]
 
-// 主组件
 export const ConfigModalApp = ({ config }: { config: Config }) => {
   const [tab, setTab] = useState("settings")
   const [cfg, setCfg] = useState(() => config.clone_features())
@@ -291,6 +519,7 @@ export const ConfigModalApp = ({ config }: { config: Config }) => {
   const onSave = () => {
     config.features = cfg
     config.save()
+    alert("\u914d\u7f6e\u5df2\u4fdd\u5b58")
   }
   const t = tabs.find((t) => t.id === tab)!
   const props = (id: string) => {

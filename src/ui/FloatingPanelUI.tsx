@@ -1,5 +1,6 @@
 import { useState, useEffect } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
+import { Config } from "../core/Config"
 import { theme } from "../utils/theme"
 import { ProfileJobModalApp } from "./ProfileJobModal"
 // 创建 CSS-in-JS 实例
@@ -82,8 +83,16 @@ import type { ProfileDownloadManager } from "../handlers/ProfileDownloadManager"
 import type { ProfileDataService } from "../handlers/ProfileDataService"
 
 // 浮动操作面板主组件
-export const FloatingPanelApp = ({ dataService, downloadManager }: { dataService: ProfileDataService; downloadManager: ProfileDownloadManager }) => {
-  const [exp, setExp] = useState(false)
+export const FloatingPanelApp = ({
+  dataService,
+  downloadManager,
+  onOpenSettings,
+}: {
+  dataService: ProfileDataService
+  downloadManager: ProfileDownloadManager
+  onOpenSettings?: () => void
+}) => {
+  const [exp, setExp] = useState(() => Config.global.features.enable_profile_downloader)
   const [snap, setSnap] = useState(() => downloadManager.getSnapshot())
   const [showJob, setShowJob] = useState(false)
   useEffect(() => {
@@ -104,7 +113,16 @@ export const FloatingPanelApp = ({ dataService, downloadManager }: { dataService
   }
   return (
     <div className={exp ? s.panelOpen : s.panelClosed}>
-      <button className={s.fab} onClick={() => setExp(!exp)} style={{ transform: exp ? "rotate(45deg)" : "rotate(0)" }}>
+      <button
+        className={s.fab}
+        onClick={() => {
+          const next = !exp
+          setExp(next)
+          Config.global.features.enable_profile_downloader = next
+          Config.global.save()
+        }}
+        style={{ transform: exp ? "rotate(45deg)" : "rotate(0)" }}
+      >
         {exp ? "+" : "D"}
       </button>
       {exp && (
@@ -133,6 +151,9 @@ export const FloatingPanelApp = ({ dataService, downloadManager }: { dataService
           <div className={s.btnGroup}>
             <button className={s.btn} onClick={() => downloadManager.markSelectAll(!downloadManager.isSelectAll())}>
               {downloadManager.isSelectAll() ? "取消全选" : "全选"}
+            </button>
+            <button className={s.btn} onClick={() => onOpenSettings?.()}>
+              设置
             </button>
             <button className={s.btn} onClick={() => setShowJob(true)}>
               查看详情

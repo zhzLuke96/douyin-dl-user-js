@@ -199,6 +199,13 @@ export class Downloader {
       case "aria2":
       case "bc":
       case "abdm": {
+        let resolvedFilename = filename_input
+        try {
+          const meta = await this.prepare_filename(url, filename_input)
+          resolvedFilename = meta.filename
+        } catch (e) {
+          console.warn("[dy-dl] prepare_filename failed, using input filename", e)
+        }
         const launcher = new DownloaderLauncher({
           idmList: [{ id: downloader_config.idm?.id ?? "1" }],
           aria2List: [
@@ -222,7 +229,10 @@ export class Downloader {
           ],
           abdmList: [{ domain: downloader_config.abdm?.domain ?? "http://localhost", port: downloader_config.abdm?.port ?? "15151", dir: "" }],
         })
-        const ok = await launcher.invoke_download(url, using_downloader, (downloader_config as any)[using_downloader]?.dir, { filename_input, media: options.media })
+        const ok = await launcher.invoke_download(url, using_downloader, (downloader_config as any)[using_downloader]?.dir, {
+          filename_input: resolvedFilename,
+          media: options.media,
+        })
         return { ok: !!ok, error_msg: "" }
       }
       default:

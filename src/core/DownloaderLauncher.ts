@@ -54,7 +54,7 @@ export class DownloaderLauncher {
     dir_config?: { video?: string; image?: string; other?: string } | null,
     options: { filename_input?: string; media?: any } = {},
   ): Promise<boolean> {
-    const input_filename = options.filename_input || "download"
+    const input_filename = options.filename_input || (options.media ? "media_" + Date.now() : "download")
     const media = options.media
 
     const filename = input_filename
