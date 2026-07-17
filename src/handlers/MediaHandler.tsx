@@ -351,7 +351,7 @@ export class MediaHandler {
     modal.root.style.cssText = "width:650px;max-width:90vw;background:transparent;box-shadow:none;border-radius:8px;overflow:hidden"
     try {
       const { ConfigModalApp } = await import("../ui/ConfigModal")
-      render(<ConfigModalApp config={Config.global} />, modal.root)
+      render(<ConfigModalApp config={Config.global} modal={modal} />, modal.root)
     } catch (e) {
       console.error("[dy-dl] 配置组件加载失败", e)
       modal.root.textContent = "组件加载失败"

@@ -2,8 +2,10 @@
 export class Modal {
   overlay: HTMLElement
   root: HTMLElement
+  onBeforeClose?: () => boolean
 
-  constructor(callback?: (root: HTMLElement, overlay: HTMLElement) => any) {
+  constructor(callback?: (root: HTMLElement, overlay: HTMLElement) => any, onBeforeClose?: () => boolean) {
+    this.onBeforeClose = onBeforeClose
     this.overlay = document.createElement("div")
     Object.assign(this.overlay.style, {
       position: "fixed",
@@ -29,7 +31,10 @@ export class Modal {
     })
 
     this.root.addEventListener("click", (e) => e.stopPropagation())
-    this.overlay.addEventListener("click", () => this.close())
+    this.overlay.addEventListener("click", () => {
+      if (this.onBeforeClose && !this.onBeforeClose()) return
+      this.close()
+    })
     this.overlay.appendChild(this.root)
     document.body.appendChild(this.overlay)
 
@@ -39,6 +44,7 @@ export class Modal {
   }
 
   close() {
+    if (this.onBeforeClose && !this.onBeforeClose()) return
     this.overlay.remove()
   }
 }

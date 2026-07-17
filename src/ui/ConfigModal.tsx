@@ -2,9 +2,10 @@
 import { useState, useEffect, useMemo } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
 import { theme } from "../utils/theme"
+import { Modal } from "./Modal"
 import { DownloadHistory } from "../core/DownloadHistory"
 import { runInContext, formatDate } from "../utils/format"
-import type { Config } from "../core/Config"
+import { Config } from "../core/Config"
 
 const cssFn = createCSS()
 const c = {
@@ -115,6 +116,31 @@ const c = {
     wordBreak: "break-all",
   }),
   hr: cssFn({ border: "none", borderTop: "1px solid " + theme.colors.borderLight, margin: theme.spacing.sm + " 0" }),
+  btnSave: cssFn({
+    padding: theme.spacing.xs + " " + theme.spacing.md,
+    fontSize: theme.fontSize.xs,
+    cursor: "pointer",
+    border: "1px solid rgba(255,255,255,0.3)",
+    background: "rgba(255,255,255,0.08)",
+    color: theme.colors.textPrimary,
+    borderRadius: theme.borderRadius.full,
+    marginLeft: theme.spacing.sm,
+    transition: "0.2s",
+    whiteSpace: "nowrap",
+  }),
+  btnSaveDirty: cssFn({
+    padding: theme.spacing.xs + " " + theme.spacing.md,
+    fontSize: theme.fontSize.xs,
+    cursor: "pointer",
+    border: "2px solid " + theme.colors.primary,
+    background: "rgba(64,150,255,0.2)",
+    color: theme.colors.primary,
+    borderRadius: theme.borderRadius.full,
+    marginLeft: theme.spacing.sm,
+    transition: "0.2s",
+    whiteSpace: "nowrap",
+    fontWeight: "bold",
+  }),
 }
 const navCls = (a: boolean) => (a ? c.navBtnBase + " " + c.navBtnActive : c.navBtnBase)
 
@@ -180,30 +206,30 @@ const previewFilename = (template: string, maxLen: number): string => {
   return base.replace(/\./g, "_")
 }
 
+const previewDirPath = (template: string): string => {
+  if (!template) return ""
+  const { authorInfo: { nickname }, awemeId, desc, authorUserId } = mockMedia
+  const uid = authorUserId
+  const userDir = `${uid}_${nickname}`.replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, "_")
+  const ctx: any = {
+    user_dir: userDir, nickname, uid, aweme_id: awemeId, desc,
+    filename: "example.mp4", filename_base: "example", media: mockMedia,
+  }
+  let resolved
+  try { resolved = runInContext(ctx, template) } catch { resolved = "(无法解析)" }
+  return typeof resolved === "string" ? resolved : String(resolved)
+}
+
 // ========== SettingsTab ==========
-const SettingsTab = ({ cfg, onSave }: { cfg: any; onSave: () => void }) => {
+const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dirty?: boolean }) => {
   const filenamePreview = useMemo(() => previewFilename(cfg.filename_template, cfg.filename_max_length), [cfg.filename_template, cfg.filename_max_length])
   return (
     <div>
       <div style={{ textAlign: "right", marginBottom: theme.spacing.md }}>
-        <button className={c.btn} onClick={onSave}>
+        <button className={dirty ? c.btnSaveDirty : c.btnSave} onClick={onSave}>
           保存设置
         </button>
       </div>
-      <fieldset className={c.fieldset}>
-        <legend className={c.legend}>下载器配置</legend>
-        <div className={c.row}>
-          <span className={c.label}>下载器</span>
-          <select className={c.select} value={cfg.using_downloader} onChange={(e) => (cfg.using_downloader = (e.target as HTMLSelectElement).value)}>
-            <option value="browser">浏览器</option>
-            <option value="idm">IDM</option>
-            <option value="aria2">Aria2</option>
-            <option value="bc">BitComet</option>
-            <option value="abdm">AB Download Manager</option>
-          </select>
-        </div>
-        <div className={c.hintText}>如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。注意：使用外部下载器时，图片压缩转码功能不可用。</div>
-      </fieldset>
       <fieldset className={c.fieldset}>
         <legend className={c.legend}>文件命名</legend>
         <div className={c.row}>
@@ -284,7 +310,7 @@ const SettingsTab = ({ cfg, onSave }: { cfg: any; onSave: () => void }) => {
         <div className={c.hintText}>注意：压缩率仅当转码或尺寸压缩开启时生效，推荐 60% 以上。</div>
       </fieldset>
       <div style={{ textAlign: "right", marginTop: theme.spacing.lg, paddingTop: theme.spacing.md, borderTop: "1px solid " + theme.colors.borderLight }}>
-        <button className={c.btn} onClick={onSave}>
+        <button className={dirty ? c.btnSaveDirty : c.btnSave} onClick={onSave}>
           保存配置
         </button>
       </div>
@@ -293,11 +319,12 @@ const SettingsTab = ({ cfg, onSave }: { cfg: any; onSave: () => void }) => {
 }
 
 // ========== DownloaderConfigTab ==========
-const DownloaderConfigTab = ({ cfg }: { cfg: any }) => {
+const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void }) => {
   const dlType = cfg.using_downloader
   const dc = cfg.downloader_config
   if (dlType === "browser") return <div>浏览器下载无需额外配置</div>
   const setField = (path: string, val: string) => {
+    val = val.replace(/\\/g, "/")
     const parts = path.split(".")
     let obj = dc[dlType]
     for (let i = 0; i < parts.length - 1; i++) {
@@ -353,11 +380,38 @@ const DownloaderConfigTab = ({ cfg }: { cfg: any }) => {
         <span className={c.label}>其他目录</span>
         <input className={c.input} value={dcfg.dir?.other || ""} onChange={(e) => setField("dir.other", (e.target as HTMLInputElement).value)} />
       </div>
+      <div className={c.hintText}>
+        可用变量：<span className={c.codeBlock}>{"${user_dir}"}</span> <span className={c.codeBlock}>{"${nickname}"}</span>{" "}
+        <span className={c.codeBlock}>{"${uid}"}</span> <span className={c.codeBlock}>{"${aweme_id}"}</span>{" "}
+        <span className={c.codeBlock}>{"${desc}"}</span> <span className={c.codeBlock}>{"${filename}"}</span>{" "}
+        <span className={c.codeBlock}>{"${filename_base}"}</span>
+        <br />
+        使用模板字符串语法，如：<span className={c.codeBlock}>{"`./douyin/${user_dir}/videos`"}</span>
+      </div>
+      <div className={c.hintText}>
+        预览视频目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.video || "")}</span><br />
+        预览图片目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.image || "")}</span><br />
+        预览其他目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.other || "")}</span>
+      </div>
     </>
   )
 
   return (
     <div>
+      <fieldset className={c.fieldset}>
+        <legend className={c.legend}>下载器</legend>
+        <div className={c.row}>
+          <span className={c.label}>类型</span>
+          <select className={c.select} value={cfg.using_downloader} onChange={(e) => (cfg.using_downloader = (e.target as HTMLSelectElement).value)}>
+            <option value="browser">浏览器</option>
+            <option value="idm">IDM</option>
+            <option value="aria2">Aria2</option>
+            <option value="bc">BitComet</option>
+            <option value="abdm">AB Download Manager</option>
+          </select>
+        </div>
+        <div className={c.hintText}>如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。注意：使用外部下载器时，图片压缩转码功能不可用。</div>
+      </fieldset>
       {dlType === "abdm" && (
         <fieldset className={c.fieldset}>
           <legend className={c.legend}>AB Download Manager</legend>
@@ -429,9 +483,9 @@ const DownloaderConfigTab = ({ cfg }: { cfg: any }) => {
           {renderDirFields()}
         </fieldset>
       )}
-      <div className={c.hintText}>注意：需要在基本设置中选择对应的下载器后，此处配置才会生效。</div>
+      <div className={c.hintText}>选择对应的下载器后，在此填写对应配置即可。</div>
       <div style={{ display: "flex", gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
-        <button className={c.btn} onClick={() => alert("配置已保存")}>
+        <button className={c.btn} onClick={() => { if (onSave) onSave(); else { Config.global.features = cfg; Config.global.save(); alert("配置已保存") } }}>
           保存
         </button>
         <button className={c.btnDanger} onClick={resetDefaults}>
@@ -504,19 +558,33 @@ const tabs = [
   { id: "history", title: "下载历史", Comp: HistoryTab },
 ]
 
-export const ConfigModalApp = ({ config }: { config: Config }) => {
+export const ConfigModalApp = ({ config, modal }: { config: Config; modal?: Modal }) => {
   const [tab, setTab] = useState("settings")
   const [cfg, setCfg] = useState(() => config.clone_features())
-  useEffect(() => setCfg(config.clone_features()), [config])
+  const [saveVersion, setSaveVersion] = useState(0)
+  const originalRef = useMemo(() => JSON.stringify(config.clone_features()), [config, saveVersion])
+  useEffect(() => {
+    const cloned = config.clone_features()
+    setCfg(cloned)
+  }, [config])
+  const dirty = useMemo(() => JSON.stringify(cfg) !== originalRef, [cfg, originalRef])
+
+  useEffect(() => {
+    if (modal) {
+      modal.onBeforeClose = dirty ? () => confirm("有未保存的修改，确定放弃？") : undefined
+    }
+  }, [dirty, modal])
+
   const onSave = () => {
     config.features = cfg
     config.save()
+    setSaveVersion((v) => v + 1)
     alert("配置已保存")
   }
   const t = tabs.find((t) => t.id === tab)!
   const props = (id: string) => {
-    if (id === "settings") return { cfg, onSave }
-    if (id === "downloader") return { cfg }
+    if (id === "settings") return { cfg, onSave, dirty }
+    if (id === "downloader") return { cfg, onSave }
     return {}
   }
   const Comp = t.Comp as any
