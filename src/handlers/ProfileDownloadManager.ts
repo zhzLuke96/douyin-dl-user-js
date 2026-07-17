@@ -138,11 +138,12 @@ export class ProfileDownloadManager extends Emitter<Events> {
     const profile = !this.jobRunning && isProfilePage ? this.dataService.getProfileContext() : null
     const profileName = this.jobState?.profileName || profile?.profileName || profileNameFallback
     const statusLabel = this.jobRunning ? "进行中" : this.jobState?.status === "completed" ? "已完成" : this.jobState?.status === "paused" ? "已暂停" : "待开始"
+    const counts = this.getCounts()
     return {
       jobRunning: this.jobRunning,
       profileName,
       statusLabel,
-      counts: this.getCounts(),
+      counts,
       summary: `${statusLabel} 选择/发现: ${this.selectedIds.size}/${this.jobState?.knownIds?.length || 0}\n已下载: ${counts.downloaded} 失败: ${counts.failed}`,
     }
   }
