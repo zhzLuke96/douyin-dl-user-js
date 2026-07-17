@@ -1,3 +1,5 @@
+import { runInContext } from "../utils/format"
+
 interface LauncherConfig {
   idmList: Array<{ id: string; default?: boolean; [key: string]: any }>
   aria2List: Array<{ domain: string; port: string; path: string; token: string; dir: string; default?: boolean; [key: string]: any }>
@@ -31,12 +33,8 @@ export class DownloaderLauncher {
    */
   private _resolveDirTemplate(input: string, context: any, fallback = ""): string {
     if (typeof input !== "string" || !input.trim()) return fallback
-    if (!input.includes("${") && !input.startsWith("`")) return input
-    const templateCode = input.startsWith("`") ? input : "`" + input.replace(/\\/g, "\\\\").replace(/`/g, "\\`") + "`"
     try {
-      const keys = Object.keys(context)
-      const fn = new Function("__CTX__", "const {" + keys.join(", ") + "} = __CTX__;\nreturn (" + templateCode + ")")
-      const resolved = fn(context)
+      const resolved = runInContext(context, input)
       return typeof resolved === "string" && resolved.trim() ? resolved : fallback
     } catch {
       return fallback

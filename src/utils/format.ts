@@ -4,7 +4,10 @@
 export function runInContext(context: Record<string, any>, code: string): any {
   const keys = Object.keys(context)
   const head = `const {${keys.join(", ")}} = __CTX__; `
-  const body = code.trim()
+  let body = code.trim()
+  if (!body.startsWith("`")) {
+    body = "`" + body.replace(/\\/g, "\\\\").replace(/`/g, "\\`") + "`"
+  }
   const fn = new Function("__CTX__", `${head}\nreturn (${body})`)
   return fn(context)
 }
