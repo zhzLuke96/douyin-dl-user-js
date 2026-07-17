@@ -143,7 +143,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
       profileName,
       statusLabel,
       counts: this.getCounts(),
-      summary: statusLabel + " 选择/发现: " + this.selectedIds.size + "/" + (this.jobState?.knownIds?.length || 0),
+      summary: `${statusLabel} 选择/发现: ${this.selectedIds.size}/${this.jobState?.knownIds?.length || 0}\n已下载: ${counts.downloaded} 失败: ${counts.failed}`,
     }
   }
 

@@ -202,6 +202,30 @@ const s = {
   failTable: css({ width: "100%", fontSize: "12px", borderCollapse: "collapse", borderRadius: theme.borderRadius.sm, overflow: "hidden" }),
   failTh: css({ padding: theme.spacing.sm, background: "rgba(255,255,255,0.06)", textAlign: "left", color: theme.colors.textMuted, fontWeight: 600 }),
   failTd: css({ padding: theme.spacing.sm, borderBottom: "1px solid " + theme.colors.borderLight, color: theme.colors.textSecondary }),
+  progressBarContainer: css({
+    height: "6px",
+    background: "rgba(255,255,255,0.1)",
+    borderRadius: "3px",
+    margin: "0 32px",
+    overflow: "hidden",
+  }),
+  progressBarFill: css({
+    height: "100%",
+    background: theme.colors.primary,
+    borderRadius: "3px",
+    transition: "width 0.3s",
+  }),
+  footer: css({
+    padding: "8px 32px",
+    fontSize: "11px",
+    color: theme.colors.textDim,
+    borderTop: "1px solid " + theme.colors.borderLight,
+  }),
+  statusText: css({
+    fontSize: "12px",
+    color: theme.colors.textMuted,
+    margin: "0 32px 6px",
+  }),
 }
 
 // ========== 组件 ==========
@@ -257,7 +281,8 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
       const q = searchText.toLowerCase().trim()
       list = list.filter((item) => {
         const desc = (item.media.desc || "").toLowerCase()
-        return desc.includes(q) || item.awemeId.toLowerCase().includes(q)
+        const shortId = MediaHandler.toShortId(item.awemeId).toLowerCase()
+        return desc.includes(q) || item.awemeId.toLowerCase().includes(q) || shortId.includes(q)
       })
     }
     return list
@@ -286,6 +311,7 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
       <div className={s.modal} onClick={(e) => e.stopPropagation()}>
         <div className={s.header}>
           <h3 className={s.title}>批量下载 - {snap.profileName}</h3>
+          <div className={s.statusText}>⚡ 状态: {snap.jobRunning ? "运行中" : snap.statusLabel || "待命"}</div>
           <button className={s.closeBtn} onClick={onClose}>
             x
           </button>
@@ -293,10 +319,15 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
 
         {/* 统计栏 */}
         <div className={s.statsBar}>
-          <span>已发现: {snap.counts.known}</span>
-          <span>已下载: {snap.counts.downloaded}</span>
-          <span>失败: {snap.counts.failed}</span>
-          <span>已选: {snap.counts.selected}</span>
+          <span>📊 已发现: {snap.counts.known}</span>
+          <span>✅ 已下载: {snap.counts.downloaded}</span>
+          <span>❌ 失败: {snap.counts.failed}</span>
+          <span>☑️ 已选: {snap.counts.selected}</span>
+        </div>
+
+        {/* 进度条 */}
+        <div className={s.progressBarContainer}>
+          <div className={s.progressBarFill} style={{ width: (snap.counts.known ? (snap.counts.downloaded / snap.counts.known) * 100 : 0) + "%" }} />
         </div>
 
         {/* 筛选栏 */}
@@ -414,6 +445,9 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
           )}
         </div>
 
+        {/* 底部提示 */}
+        <div className={s.footer}>提示：勾选作品后点击"开始下载"将按顺序下载选中作品。使用类型筛选快速定位内容。</div>
+
         {/* 底部操作栏 */}
         <div className={s.actionBar}>
           <button className={s.btn} onClick={() => handleSelectAll(!isFilteredAllSelected)} disabled={filteredList.length === 0}>
@@ -428,8 +462,11 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
               暂停
             </button>
           )}
-          <button className={s.btn} onClick={() => downloadManager.resetState()}>
+          <button className={s.btn} onClick={() => { if (confirm("确定重置当前作者的下载记录吗？这将清除已下载和失败记录。")) downloadManager.resetState() }}>
             重置
+          </button>
+          <button className={s.btn} onClick={() => downloadManager.mediaHandler.open_config_modal()}>
+            ⚙️ 设置
           </button>
           <button className={s.btn} onClick={onClose}>
             关闭
