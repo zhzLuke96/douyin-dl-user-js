@@ -15,7 +15,7 @@ const s = {
     border: "none",
     background: theme.colors.primary,
     color: "#fff",
-    fontSize: "20px",
+    fontSize: "12px",
     cursor: "pointer",
     boxShadow: "0 4px 12px rgba(254,44,85,0.4)",
     alignSelf: "flex-end",
@@ -50,6 +50,8 @@ const s = {
     textAlign: "center",
     transition: "0.2s",
     minWidth: "60px",
+    wordBreak: "keep-all",
+    whiteSpace: "nowrap"
   }),
   btnPrimary: css({
     flex: 1,
@@ -63,6 +65,8 @@ const s = {
     textAlign: "center",
     transition: "0.2s",
     minWidth: "60px",
+    wordBreak: "keep-all",
+    whiteSpace: "nowrap"
   }),
   btnDanger: css({
     flex: 1,
@@ -76,6 +80,8 @@ const s = {
     textAlign: "center",
     transition: "0.2s",
     minWidth: "60px",
+    wordBreak: "keep-all",
+    whiteSpace: "nowrap"
   }),
   summary: css({ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "8px", lineHeight: 1.4, whiteSpace: "pre-line" }),
 }
@@ -121,9 +127,8 @@ export const FloatingPanelApp = ({
           Config.global.features.enable_profile_downloader = next
           Config.global.save()
         }}
-        style={{ transform: exp ? "rotate(45deg)" : "rotate(0)" }}
       >
-        {exp ? "+" : "D"}
+        {exp ? "❌" : "插件"}
       </button>
       {exp && (
         <div className={s.card}>
@@ -158,6 +163,7 @@ export const FloatingPanelApp = ({
             <button className={s.btn} onClick={() => setShowJob(true)}>
               查看详情
             </button>
+            <br />
             {!snap.jobRunning ? (
               <button className={s.btnPrimary} onClick={startJob} disabled={snap.counts.selected === 0}>
                 开始下载

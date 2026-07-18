@@ -1,5 +1,14 @@
-type CSSObject = { [key: string]: string | number | CSSObject | null | false }
+import type { CSSProperties } from 'preact';
+
+type CSSObject = {
+  // NOTE 缺少值补全功能，但是基本够用了
+  [K in keyof CSSProperties]?: CSSProperties[K] | null | false | CSSObject;
+} & {
+  [key: string]: string | number | CSSObject | null | false;
+};
 type CSSInput = CSSObject | Array<CSSObject | null | false>
+
+// document.body.style.display
 
 /**
  * 创建一个极简 CSS-in-JS 工具
