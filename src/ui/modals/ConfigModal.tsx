@@ -1,11 +1,11 @@
 // 配置弹窗组件
 import { useState, useEffect, useMemo } from "preact/hooks"
-import { createCSS } from "../utils/css-in-js"
-import { theme } from "../utils/theme"
+import { createCSS } from "../../utils/css-in-js"
+import { theme } from "../../utils/theme"
 import { Modal } from "./Modal"
-import { DownloadHistory } from "../core/DownloadHistory"
-import { runInContext, formatDate } from "../utils/format"
-import { Config } from "../core/Config"
+import { DownloadHistory } from "../../core/download/DownloadHistory"
+import { runInContext, formatDate } from "../../utils/format"
+import { Config } from "../../core/Config"
 
 const cssFn = createCSS()
 const c = {

@@ -1,11 +1,11 @@
 import { Config } from "./Config"
 import { TooltipsButton } from "../ui/TooltipsButton"
-import { ProfileDataService } from "../handlers/ProfileDataService"
-import type { Downloader } from "./Downloader"
+import { ProfileDataService } from "../handlers/profile/ProfileDataService"
+import type { Downloader } from "./download/Downloader"
 import type { MediaHandler } from "../handlers/MediaHandler"
 import type { VideoHandler } from "../handlers/VideoHandler"
 import type { DanmakuHandler } from "../handlers/DanmakuHandler"
-import type { ProfilePageHandler } from "../handlers/ProfilePageHandler"
+import type { ProfilePageHandler } from "../handlers/profile/ProfilePageHandler"
 
 /**
  * DOM Patcher - 负责DOM监听、注入下载按钮及相关UI元素

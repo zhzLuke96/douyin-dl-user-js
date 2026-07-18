@@ -1,4 +1,4 @@
-import type { MediaLite } from "../types/lite"
+import type { MediaLite } from "../../types/lite"
 
 export class DownloadHistory {
   static STORAGE_KEY = "__douyin-dl-history__"

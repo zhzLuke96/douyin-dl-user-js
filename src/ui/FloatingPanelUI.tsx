@@ -2,7 +2,7 @@ import { useState, useEffect } from "preact/hooks"
 import { createCSS } from "../utils/css-in-js"
 import { Config } from "../core/Config"
 import { theme } from "../utils/theme"
-import { ProfileJobModalApp } from "./ProfileJobModal"
+import { ProfileJobModalApp } from "./modals/ProfileJobModal"
 // 创建 CSS-in-JS 实例
 const css = createCSS()
 const s = {
@@ -85,8 +85,8 @@ const s = {
   }),
   summary: css({ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "8px", lineHeight: 1.4, whiteSpace: "pre-line" }),
 }
-import type { ProfileDownloadManager } from "../handlers/ProfileDownloadManager"
-import type { ProfileDataService } from "../handlers/ProfileDataService"
+import type { ProfileDownloadManager } from "../handlers/profile/ProfileDownloadManager"
+import type { ProfileDataService } from "../handlers/profile/ProfileDataService"
 
 // 浮动操作面板主组件
 export const FloatingPanelApp = ({

@@ -1,7 +1,7 @@
-import { FloatingPanel } from "../ui/FloatingPanel"
+import { FloatingPanel } from "../../ui/FloatingPanel"
 import { ProfileDataService } from "./ProfileDataService"
 import { ProfileDownloadManager } from "./ProfileDownloadManager"
-import type { MediaHandler } from "./MediaHandler"
+import type { MediaHandler } from "../MediaHandler"
 
 export class ProfilePageHandler {
   dataService: ProfileDataService

@@ -1,8 +1,8 @@
 import { render } from "preact"
 import { Config } from "../core/Config"
-import { Downloader } from "../core/Downloader"
-import { DownloadHistory } from "../core/DownloadHistory"
-import { Modal } from "../ui/Modal"
+import { Downloader } from "../core/download/Downloader"
+import { DownloadHistory } from "../core/download/DownloadHistory"
+import { Modal } from "../ui/modals/Modal"
 import { createToast } from "../utils/dom"
 import { formatDate, runInContext } from "../utils/format"
 import type { PlayerInstanceLite } from "../types/lite"
@@ -334,7 +334,7 @@ export class MediaHandler {
 
     // 3. 挂载 UI (使用 Preact render)
     try {
-      const { MediaDetailModalApp } = await import("../ui/MediaDetailModal")
+      const { MediaDetailModalApp } = await import("../ui/modals/MediaDetailModal")
       render(<MediaDetailModalApp media={this.current_media} filenameBase={filenameBase} />, modal.root)
     } catch (e) {
       console.error("[dy-dl] 媒体详情组件加载失败", e)
@@ -350,7 +350,7 @@ export class MediaHandler {
     })
     modal.root.style.cssText = "width:650px;max-width:90vw;background:transparent;box-shadow:none;border-radius:8px;overflow:hidden"
     try {
-      const { ConfigModalApp } = await import("../ui/ConfigModal")
+      const { ConfigModalApp } = await import("../ui/modals/ConfigModal")
       render(<ConfigModalApp config={Config.global} modal={modal} />, modal.root)
     } catch (e) {
       console.error("[dy-dl] 配置组件加载失败", e)

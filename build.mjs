@@ -38,6 +38,9 @@ const config = {
   charset: "utf8",
   minifySyntax: isMinify,
   minifyWhitespace: isMinify,
+  alias: {
+    "@": "./src",
+  },
   define: {
     "process.env.NODE_ENV": isMinify ? '"production"' : '"development"',
   },

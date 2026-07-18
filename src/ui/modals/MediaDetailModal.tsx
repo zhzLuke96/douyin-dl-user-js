@@ -1,8 +1,8 @@
 // 媒体详情 modal
 import { useState, useEffect, useRef } from "preact/hooks"
-import { createCSS } from "../utils/css-in-js"
-import { theme } from "../utils/theme"
-import { DownloaderLauncher } from "../core/DownloaderLauncher"
+import { createCSS } from "../../utils/css-in-js"
+import { theme } from "../../utils/theme"
+import { DownloaderLauncher } from "../../core/download/DownloaderLauncher"
 
 // --- 初始化 CSS-in-JS 工具 ---
 const css = createCSS()

@@ -1,9 +1,9 @@
 // 批量下载任务管理弹窗
 import { useState, useEffect, useCallback, useMemo } from "preact/hooks"
-import { createCSS } from "../utils/css-in-js"
-import { theme } from "../utils/theme"
-import type { ProfileDownloadManager } from "../handlers/ProfileDownloadManager"
-import { MediaHandler } from "../handlers/MediaHandler"
+import { createCSS } from "../../utils/css-in-js"
+import { theme } from "../../utils/theme"
+import type { ProfileDownloadManager } from "../../handlers/profile/ProfileDownloadManager"
+import { MediaHandler } from "../../handlers/MediaHandler"
 
 const css = createCSS()
 const s = {

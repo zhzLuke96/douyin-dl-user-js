@@ -1,12 +1,12 @@
 // ========== Main Script Logic =============
 // douyin-dl-user-js 入口
-import { Downloader } from "./core/Downloader"
+import { Downloader } from "./core/download/Downloader"
 import { DOMPatcher } from "./core/DOMPatcher"
 import { HotkeyManager } from "./core/HotkeyManager"
 import { MediaHandler } from "./handlers/MediaHandler"
 import { VideoHandler } from "./handlers/VideoHandler"
 import { DanmakuHandler } from "./handlers/DanmakuHandler"
-import { ProfilePageHandler } from "./handlers/ProfilePageHandler"
+import { ProfilePageHandler } from "./handlers/profile/ProfilePageHandler"
 
 const downloader = new Downloader()
 const mediaHandler = new MediaHandler(downloader)

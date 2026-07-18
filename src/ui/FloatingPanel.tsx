@@ -1,7 +1,7 @@
 import { render } from "preact"
 import { FloatingPanelApp } from "./FloatingPanelUI"
-import type { ProfileDataService } from "../handlers/ProfileDataService"
-import type { ProfileDownloadManager } from "../handlers/ProfileDownloadManager"
+import type { ProfileDataService } from "../handlers/profile/ProfileDataService"
+import type { ProfileDownloadManager } from "../handlers/profile/ProfileDownloadManager"
 
 export class FloatingPanel {
   private root: HTMLElement | null = null

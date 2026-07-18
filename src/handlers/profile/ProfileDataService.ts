@@ -1,4 +1,4 @@
-import { isProfilePagePath } from "../utils/string"
+import { isProfilePagePath } from "../../utils/string"
 
 export class ProfileDataService {
   static FEED_CARD_SELECTOR = '.waterfall-videoCardContainer[href], [href*="/video/"][target="_blank"], [href*="/note/"][target="_blank"]'

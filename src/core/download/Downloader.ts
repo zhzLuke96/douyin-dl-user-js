@@ -1,5 +1,5 @@
 import { ImageProcessor } from "./ImageProcessor"
-import { Config } from "./Config"
+import { Config } from "../Config"
 import { DownloaderLauncher } from "./DownloaderLauncher"
 
 interface DownloadResult {

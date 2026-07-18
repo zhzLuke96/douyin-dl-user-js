@@ -1,7 +1,7 @@
-import { Emitter } from "../core/Emitter"
-import { ProfileDownloadState } from "../core/ProfileDownloadState"
-import { throttle } from "../utils/performance"
-import type { MediaHandler } from "./MediaHandler"
+import { Emitter } from "../../core/Emitter"
+import { ProfileDownloadState } from "../../core/download/ProfileDownloadState"
+import { throttle } from "../../utils/performance"
+import type { MediaHandler } from "../MediaHandler"
 import type { ProfileDataService } from "./ProfileDataService"
 
 /** 事件定义（供外部订阅） */

@@ -1,4 +1,4 @@
-import { runInContext } from "../utils/format"
+import { runInContext } from "../../utils/format"
 
 interface LauncherConfig {
   idmList: Array<{ id: string; default?: boolean; [key: string]: any }>
