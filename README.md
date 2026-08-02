@@ -4,6 +4,7 @@
 
 - [greasyfork](https://greasyfork.org/zh-CN/scripts/522326-%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD)
 - [github](https://github.com/zhzLuke96/douyin-dl-user-js)
+- [github release 安装](https://github.com/zhzLuke96/douyin-dl-user-js/releases/latest/download/dy-dl.user.js)
 
 ## Features
 

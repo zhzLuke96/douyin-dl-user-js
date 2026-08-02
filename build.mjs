@@ -18,8 +18,8 @@ const USERSCRIPT_HEADER = `// ==UserScript==
 // @icon            https://www.google.com/s2/favicons?sz=64&domain=douyin.com
 // @license         MIT
 // @supportURL      https://github.com/zhzLuke96/douyin-dl-user-js/issues
-// @downloadURL     https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.user.js
-// @updateURL       https://update.greasyfork.org/scripts/522326/%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD.meta.js
+// @downloadURL     https://github.com/zhzLuke96/douyin-dl-user-js/releases/latest/download/dy-dl.user.js
+// @updateURL       https://github.com/zhzLuke96/douyin-dl-user-js/releases/latest/download/dy-dl.user.js
 // @grant           GM_xmlhttpRequest
 // @connect         *
 // ==/UserScript==
