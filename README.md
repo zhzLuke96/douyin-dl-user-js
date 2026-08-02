@@ -99,6 +99,8 @@
 
 ### 配置和历史
 
+- [配置模板与变量教程](docs/template-config.md)
+
 <img width="578" height="656" alt="image" src="https://github.com/user-attachments/assets/5b1d6b53-ad86-4380-9a44-b4b8288dc2ec" />
 
 #### 视频下载
