@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "preact/hooks"
 import { createCSS } from "../../utils/css-in-js"
 import { theme } from "../../utils/theme"
 import { DownloaderLauncher } from "../../core/download/DownloaderLauncher"
+import { getBestCoverUrl } from "@/handlers/douyin/getBestCoverUrl"
 
 // --- 初始化 CSS-in-JS 工具 ---
 const css = createCSS()
@@ -215,9 +216,10 @@ const LaunchButtons = ({ url }: { url: string }) => (
 )
 
 // 视频部分
-const VideoSection = ({ video, filenameBase }: { video: any; filenameBase: string }) => {
+const VideoSection = ({ video, media, filenameBase }: { video: any; media: any; filenameBase: string }) => {
   if (!video?.bitRateList?.length) return null
-  const cu = video.originCoverUrlList?.[1] || video.originCoverUrlList?.[0]
+  // TODO: 应该有个无封面占位图，但是一般情况不太可能没封面...
+  const cu = getBestCoverUrl(media) || "#"
   return (
     <>
       <fieldset className={styles.fieldset}>
@@ -324,7 +326,7 @@ const MediaTab = ({ media, filenameBase }: { media: any; filenameBase: string })
   if (!media) return <div>无媒体信息</div>
   return (
     <div>
-      <VideoSection video={media.video} filenameBase={filenameBase} />
+      <VideoSection media={media} video={media.video} filenameBase={filenameBase} />
       <ImageSection images={media.images} />
       <MusicSection music={media.music} />
     </div>

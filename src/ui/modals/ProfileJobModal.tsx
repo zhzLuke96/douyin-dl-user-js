@@ -4,6 +4,7 @@ import { createCSS } from "../../utils/css-in-js"
 import { theme } from "../../utils/theme"
 import type { ProfileDownloadManager } from "../../handlers/profile/ProfileDownloadManager"
 import { MediaHandler } from "../../handlers/MediaHandler"
+import { getBestCoverUrl } from "@/handlers/douyin/getBestCoverUrl"
 
 const css = createCSS()
 const s = {
@@ -366,7 +367,7 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
             <tbody>
               {filteredList.map((item) => {
                 const media = item.media
-                const coverUrl = media.video?.dynamicCover || media.video?.originCoverUrlList?.[0] || media.video?.cover || media.images?.[0]?.urlList?.[0] || ""
+                const coverUrl = getBestCoverUrl(media) || ""
                 const desc = media.desc || "(无描述)"
                 const createDate = media.createTime ? new Date(media.createTime * 1000).toLocaleDateString() : "-"
                 const typeLabel = item.type === "album" ? "图集" : "视频"
