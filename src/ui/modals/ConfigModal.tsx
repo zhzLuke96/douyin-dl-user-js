@@ -93,8 +93,9 @@ const c = {
     border: "1px solid rgba(255,255,255,0.15)",
     color: theme.colors.textPrimary,
     borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing.xs + " " + theme.spacing.sm,
-    fontSize: theme.fontSize.xs,
+    padding: theme.spacing.sm + " " + theme.spacing.md,
+    fontSize: theme.fontSize.sm,
+    lineHeight: "20px",
     flexGrow: 1,
     minWidth: 0,
     "&:focus": { borderColor: theme.colors.primary },
@@ -208,15 +209,30 @@ const previewFilename = (template: string, maxLen: number): string => {
 
 const previewDirPath = (template: string): string => {
   if (!template) return ""
-  const { authorInfo: { nickname }, awemeId, desc, authorUserId } = mockMedia
+  const {
+    authorInfo: { nickname },
+    awemeId,
+    desc,
+    authorUserId,
+  } = mockMedia
   const uid = authorUserId
   const userDir = `${uid}_${nickname}`.replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, "_")
   const ctx: any = {
-    user_dir: userDir, nickname, uid, aweme_id: awemeId, desc,
-    filename: "example.mp4", filename_base: "example", media: mockMedia,
+    user_dir: userDir,
+    nickname,
+    uid,
+    aweme_id: awemeId,
+    desc,
+    filename: "example.mp4",
+    filename_base: "example",
+    media: mockMedia,
   }
   let resolved
-  try { resolved = runInContext(ctx, template) } catch { resolved = "(无法解析)" }
+  try {
+    resolved = runInContext(ctx, template)
+  } catch {
+    resolved = "(无法解析)"
+  }
   return typeof resolved === "string" ? resolved : String(resolved)
 }
 
@@ -280,35 +296,7 @@ const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dir
         </div>
         <div className={c.hintText}>注意：实际下载时根据可用地址匹配，并非所有视频都提供所有编码。</div>
       </fieldset>
-      <fieldset className={c.fieldset}>
-        <legend className={c.legend}>图片下载设置</legend>
-        <div className={c.row}>
-          <span className={c.label}>转码格式</span>
-          <select className={c.select} value={cfg.image_convert_codecs} onChange={(e) => (cfg.image_convert_codecs = (e.target as HTMLSelectElement).value)}>
-            <option value="default">默认</option>
-            <option value="png">PNG</option>
-            <option value="jpg">JPG</option>
-            <option value="webp">WebP</option>
-          </select>
-        </div>
-        <div className={c.row}>
-          <span className={c.label}>尺寸限制</span>
-          <select className={c.select} value={cfg.image_resize_codecs} onChange={(e) => (cfg.image_resize_codecs = (e.target as HTMLSelectElement).value)}>
-            <option value="default">默认</option>
-            <option value="2k_max">2K(2048px)</option>
-            <option value="1k_max">1K(1024px)</option>
-            <option value="960_max">960px</option>
-            <option value="640_max">640px</option>
-            <option value="512_max">512px</option>
-          </select>
-        </div>
-        <div className={c.flexBetween}>
-          <span className={c.label}>图片质量</span>
-          <span className={c.rangeValue}>{cfg.image_quality}%</span>
-        </div>
-        <input className={c.range} type="range" min="1" max="100" value={cfg.image_quality} onChange={(e) => (cfg.image_quality = Number((e.target as HTMLInputElement).value))} />
-        <div className={c.hintText}>注意：压缩率仅当转码或尺寸压缩开启时生效，推荐 60% 以上。</div>
-      </fieldset>
+
       <div style={{ textAlign: "right", marginTop: theme.spacing.lg, paddingTop: theme.spacing.md, borderTop: "1px solid " + theme.colors.borderLight }}>
         <button className={dirty ? c.btnSaveDirty : c.btnSave} onClick={onSave}>
           保存配置
@@ -320,9 +308,12 @@ const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dir
 
 // ========== DownloaderConfigTab ==========
 const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void }) => {
-  const dlType = cfg.using_downloader
+  const [dlType, setDlType] = useState(cfg.using_downloader)
+  const [, forceRender] = useState(0)
+  useEffect(() => {
+    setDlType(cfg.using_downloader)
+  }, [cfg.using_downloader])
   const dc = cfg.downloader_config
-  if (dlType === "browser") return <div>浏览器下载无需额外配置</div>
   const setField = (path: string, val: string) => {
     val = val.replace(/\\/g, "/")
     const parts = path.split(".")
@@ -333,6 +324,7 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
     }
     obj[parts[parts.length - 1]] = val
     cfg.downloader_config = { ...dc }
+    forceRender((v) => v + 1)
   }
   const resetDefaults = () => {
     if (!confirm("重置为默认配置？")) return
@@ -362,9 +354,67 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
         },
       }),
     )
+    forceRender((v) => v + 1)
   }
   const dcfg = dc[dlType]
   if (!dcfg) return <div>未知下载器</div>
+
+  // 图片转码/压缩只在浏览器下载流程中执行；外部下载器只能拿到原始图片 URL。
+  const renderBrowserImageFields = () => (
+    <>
+      <div className={c.hintText}>以下图片转码/压缩配置仅在“浏览器下载”时生效。使用外部下载器时，脚本只能把原图地址交给下载器，无法自动转码或压缩。</div>
+      <div className={c.row}>
+        <span className={c.label}>转码格式</span>
+        <select
+          className={c.select}
+          value={cfg.image_convert_codecs}
+          onChange={(e) => {
+            cfg.image_convert_codecs = (e.target as HTMLSelectElement).value
+            forceRender((v) => v + 1)
+          }}
+        >
+          <option value="default">默认</option>
+          <option value="png">PNG</option>
+          <option value="jpg">JPG</option>
+          <option value="webp">WebP</option>
+        </select>
+      </div>
+      <div className={c.row}>
+        <span className={c.label}>尺寸限制</span>
+        <select
+          className={c.select}
+          value={cfg.image_resize_codecs}
+          onChange={(e) => {
+            cfg.image_resize_codecs = (e.target as HTMLSelectElement).value
+            forceRender((v) => v + 1)
+          }}
+        >
+          <option value="default">默认</option>
+          <option value="2k_max">2K(2048px)</option>
+          <option value="1k_max">1K(1024px)</option>
+          <option value="960_max">960px</option>
+          <option value="640_max">640px</option>
+          <option value="512_max">512px</option>
+        </select>
+      </div>
+      <div className={c.flexBetween}>
+        <span className={c.label}>图片质量</span>
+        <span className={c.rangeValue}>{cfg.image_quality}%</span>
+      </div>
+      <input
+        className={c.range}
+        type="range"
+        min="1"
+        max="100"
+        value={cfg.image_quality}
+        onChange={(e) => {
+          cfg.image_quality = Number((e.target as HTMLInputElement).value)
+          forceRender((v) => v + 1)
+        }}
+      />
+      <div className={c.hintText}>压缩率仅当转码或尺寸压缩开启时生效，推荐 60% 以上。</div>
+    </>
+  )
 
   const renderDirFields = () => (
     <>
@@ -381,16 +431,17 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
         <input className={c.input} value={dcfg.dir?.other || ""} onChange={(e) => setField("dir.other", (e.target as HTMLInputElement).value)} />
       </div>
       <div className={c.hintText}>
-        可用变量：<span className={c.codeBlock}>{"${user_dir}"}</span> <span className={c.codeBlock}>{"${nickname}"}</span>{" "}
-        <span className={c.codeBlock}>{"${uid}"}</span> <span className={c.codeBlock}>{"${aweme_id}"}</span>{" "}
-        <span className={c.codeBlock}>{"${desc}"}</span> <span className={c.codeBlock}>{"${filename}"}</span>{" "}
+        可用变量：<span className={c.codeBlock}>{"${user_dir}"}</span> <span className={c.codeBlock}>{"${nickname}"}</span> <span className={c.codeBlock}>{"${uid}"}</span>{" "}
+        <span className={c.codeBlock}>{"${aweme_id}"}</span> <span className={c.codeBlock}>{"${desc}"}</span> <span className={c.codeBlock}>{"${filename}"}</span>{" "}
         <span className={c.codeBlock}>{"${filename_base}"}</span>
         <br />
         使用模板字符串语法，如：<span className={c.codeBlock}>{"`./douyin/${user_dir}/videos`"}</span>
       </div>
       <div className={c.hintText}>
-        预览视频目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.video || "")}</span><br />
-        预览图片目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.image || "")}</span><br />
+        预览视频目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.video || "")}</span>
+        <br />
+        预览图片目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.image || "")}</span>
+        <br />
         预览其他目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.other || "")}</span>
       </div>
     </>
@@ -402,7 +453,15 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
         <legend className={c.legend}>下载器</legend>
         <div className={c.row}>
           <span className={c.label}>类型</span>
-          <select className={c.select} value={cfg.using_downloader} onChange={(e) => (cfg.using_downloader = (e.target as HTMLSelectElement).value)}>
+          <select
+            className={c.select}
+            value={dlType}
+            onChange={(e) => {
+              const next = (e.target as HTMLSelectElement).value
+              setDlType(next)
+              cfg.using_downloader = next
+            }}
+          >
             <option value="browser">浏览器</option>
             <option value="idm">IDM</option>
             <option value="aria2">Aria2</option>
@@ -410,8 +469,14 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
             <option value="abdm">AB Download Manager</option>
           </select>
         </div>
-        <div className={c.hintText}>如果选择非浏览器下载，之后的下载将会发起rpc调用你部署的外部下载器。注意：使用外部下载器时，图片压缩转码功能不可用。</div>
+        <div className={c.hintText}>切换下载器会立即显示对应配置，保存后才会用于实际下载。使用外部下载器时，图片压缩转码不可用。</div>
       </fieldset>
+      {dlType === "browser" && (
+        <fieldset className={c.fieldset}>
+          <legend className={c.legend}>浏览器下载（图片转码压缩）</legend>
+          {renderBrowserImageFields()}
+        </fieldset>
+      )}
       {dlType === "abdm" && (
         <fieldset className={c.fieldset}>
           <legend className={c.legend}>AB Download Manager</legend>
@@ -483,9 +548,19 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
           {renderDirFields()}
         </fieldset>
       )}
-      <div className={c.hintText}>选择对应的下载器后，在此填写对应配置即可。</div>
+      <div className={c.hintText}>选择下载器后填写对应配置；浏览器下载不需要额外连接配置，但可使用上面的图片转码/压缩设置。</div>
       <div style={{ display: "flex", gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
-        <button className={c.btn} onClick={() => { if (onSave) onSave(); else { Config.global.features = cfg; Config.global.save(); alert("配置已保存") } }}>
+        <button
+          className={c.btn}
+          onClick={() => {
+            if (onSave) onSave()
+            else {
+              Config.global.features = cfg
+              Config.global.save()
+              alert("配置已保存")
+            }
+          }}
+        >
           保存
         </button>
         <button className={c.btnDanger} onClick={resetDefaults}>

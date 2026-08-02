@@ -65,6 +65,8 @@ export class Config {
     /**
      * 图片转码编码偏好
      *
+     * 仅浏览器下载流程生效；外部下载器不会执行图片转码。
+     *
      * 1. 默认，无偏好 "default"
      * 2. 转码为 png "png"
      * 3. 转码为 jpg "jpg"
@@ -73,6 +75,8 @@ export class Config {
     image_convert_codecs: "default",
     /**
      * 图片尺寸压缩偏好
+     *
+     * 仅浏览器下载流程生效；外部下载器不会执行图片压缩。
      *
      * 1. 默认，无偏好 "default"
      * 2. 最大边小于 2k "2k_max"
@@ -84,6 +88,8 @@ export class Config {
     image_resize_codecs: "default",
     /**
      * 图片压缩率 必须开启转码或者尺寸压缩才有用
+     *
+     * 仅浏览器下载流程生效；外部下载器不会执行图片压缩。
      *
      * 默认 80
      * 推荐 60 以上
