@@ -20,7 +20,16 @@ const c = {
     color: theme.colors.textPrimary,
     borderRadius: theme.borderRadius.lg,
   }),
-  nav: cssFn({ display: "flex", borderBottom: "1px solid " + theme.colors.borderLight, background: theme.colors.bgNav, flexShrink: 0 }),
+  header: cssFn({
+    display: "flex",
+    alignItems: "stretch",
+    justifyContent: "space-between",
+    borderBottom: "1px solid " + theme.colors.borderLight,
+    background: theme.colors.bgNav,
+    flexShrink: 0,
+  }),
+  nav: cssFn({ display: "flex", flexShrink: 0 }),
+  actions: cssFn({ display: "flex", alignItems: "center", gap: theme.spacing.sm, padding: theme.spacing.sm + " " + theme.spacing.md }),
   navBtnBase: cssFn({
     padding: theme.spacing.md + " " + theme.spacing.xl,
     border: "none",
@@ -72,7 +81,6 @@ const c = {
     background: "rgba(255,77,79,0.15)",
     color: "#ff4d4f",
     borderRadius: theme.borderRadius.full,
-    marginLeft: theme.spacing.sm,
     transition: "0.2s",
   }),
   select: cssFn({
@@ -237,20 +245,19 @@ const previewDirPath = (template: string): string => {
 }
 
 // ========== SettingsTab ==========
-const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dirty?: boolean }) => {
+const SettingsTab = ({ cfg, onChange, onResetDefaults }: { cfg: any; onChange: () => void; onResetDefaults: () => void }) => {
   const filenamePreview = useMemo(() => previewFilename(cfg.filename_template, cfg.filename_max_length), [cfg.filename_template, cfg.filename_max_length])
+  const update = (mutate: () => void) => {
+    mutate()
+    onChange()
+  }
   return (
     <div>
-      <div style={{ textAlign: "right", marginBottom: theme.spacing.md }}>
-        <button className={dirty ? c.btnSaveDirty : c.btnSave} onClick={onSave}>
-          保存设置
-        </button>
-      </div>
       <fieldset className={c.fieldset}>
         <legend className={c.legend}>文件命名</legend>
         <div className={c.row}>
           <span className={c.label}>文件名模板</span>
-          <input className={c.input} value={cfg.filename_template} onChange={(e) => (cfg.filename_template = (e.target as HTMLInputElement).value)} />
+          <input className={c.input} value={cfg.filename_template} onChange={(e) => update(() => (cfg.filename_template = (e.target as HTMLInputElement).value))} />
         </div>
         <div className={c.hintText}>
           可用变量：<span className={c.codeBlock}>nickname</span> <span className={c.codeBlock}>short_id</span> <span className={c.codeBlock}>tags</span>{" "}
@@ -259,7 +266,12 @@ const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dir
         </div>
         <div className={c.row}>
           <span className={c.label}>文件名长度</span>
-          <input className={c.input} type="number" value={cfg.filename_max_length} onChange={(e) => (cfg.filename_max_length = Number((e.target as HTMLInputElement).value))} />
+          <input
+            className={c.input}
+            type="number"
+            value={cfg.filename_max_length}
+            onChange={(e) => update(() => (cfg.filename_max_length = Number((e.target as HTMLInputElement).value)))}
+          />
         </div>
         <div className={c.row}>
           <span className={c.label}>预览</span>
@@ -270,7 +282,7 @@ const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dir
         <legend className={c.legend}>视频下载设置</legend>
         <div className={c.row}>
           <span className={c.label}>分辨率策略</span>
-          <select className={c.select} value={cfg.download_video_mode} onChange={(e) => (cfg.download_video_mode = (e.target as HTMLSelectElement).value)}>
+          <select className={c.select} value={cfg.download_video_mode} onChange={(e) => update(() => (cfg.download_video_mode = (e.target as HTMLSelectElement).value))}>
             <option value="default">默认</option>
             <option value="max">最高清晰度</option>
             <option value="min">最低清晰度</option>
@@ -286,7 +298,7 @@ const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dir
         </div>
         <div className={c.row}>
           <span className={c.label}>编码偏好</span>
-          <select className={c.select} value={cfg.video_download_codecs} onChange={(e) => (cfg.video_download_codecs = (e.target as HTMLSelectElement).value)}>
+          <select className={c.select} value={cfg.video_download_codecs} onChange={(e) => update(() => (cfg.video_download_codecs = (e.target as HTMLSelectElement).value))}>
             <option value="default">默认</option>
             <option value="h264">H.264</option>
             <option value="h265">H.265</option>
@@ -296,68 +308,46 @@ const SettingsTab = ({ cfg, onSave, dirty }: { cfg: any; onSave: () => void; dir
         </div>
         <div className={c.hintText}>注意：实际下载时根据可用地址匹配，并非所有视频都提供所有编码。</div>
       </fieldset>
-
-      <div style={{ textAlign: "right", marginTop: theme.spacing.lg, paddingTop: theme.spacing.md, borderTop: "1px solid " + theme.colors.borderLight }}>
-        <button className={dirty ? c.btnSaveDirty : c.btnSave} onClick={onSave}>
-          保存配置
+      <fieldset className={c.fieldset}>
+        <legend className={c.legend}>重置配置</legend>
+        <div className={c.hintText}>重置会将当前表单所有配置恢复为默认值，保存后覆盖现有全部配置。</div>
+        <button className={c.btnDanger} onClick={onResetDefaults}>
+          重置配置为默认
         </button>
-      </div>
+      </fieldset>
     </div>
   )
 }
 
 // ========== DownloaderConfigTab ==========
-const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void }) => {
+const DownloaderConfigTab = ({ cfg, onChange }: { cfg: any; onChange: () => void }) => {
   const [dlType, setDlType] = useState(cfg.using_downloader)
   const [, forceRender] = useState(0)
   useEffect(() => {
     setDlType(cfg.using_downloader)
   }, [cfg.using_downloader])
-  const dc = cfg.downloader_config
+  const dc = cfg.downloader_config || {}
+  const notify = () => {
+    forceRender((v) => v + 1)
+    onChange()
+  }
   const setField = (path: string, val: string) => {
     val = val.replace(/\\/g, "/")
     const parts = path.split(".")
     let obj = dc[dlType]
+    if (!obj) {
+      obj = {}
+      dc[dlType] = obj
+    }
     for (let i = 0; i < parts.length - 1; i++) {
       if (typeof obj[parts[i]] !== "object") obj[parts[i]] = {}
       obj = obj[parts[i]]
     }
     obj[parts[parts.length - 1]] = val
     cfg.downloader_config = { ...dc }
-    forceRender((v) => v + 1)
+    notify()
   }
-  const resetDefaults = () => {
-    if (!confirm("重置为默认配置？")) return
-    cfg.downloader_config = JSON.parse(
-      JSON.stringify({
-        browser: {},
-        idm: { id: "1" },
-        aria2: {
-          dir: { video: "`./douyin/${user_dir}/videos`", image: "`./douyin/${user_dir}/images`", other: "`./douyin/${user_dir}/others`" },
-          domain: "http://localhost",
-          port: "6800",
-          path: "/jsonrpc",
-          token: "",
-        },
-        bc: {
-          dir: { video: "`./douyin/${user_dir}/videos`", image: "`./douyin/${user_dir}/images`", other: "`./douyin/${user_dir}/others`" },
-          domain: "http://localhost",
-          port: "8080",
-          path: "/panel/task_add_httpftp_result",
-          authName: "",
-          authPass: "",
-        },
-        abdm: {
-          dir: { video: "`./douyin/${user_dir}/videos`", image: "`./douyin/${user_dir}/images`", other: "`./douyin/${user_dir}/others`" },
-          domain: "http://localhost",
-          port: "15151",
-        },
-      }),
-    )
-    forceRender((v) => v + 1)
-  }
-  const dcfg = dc[dlType]
-  if (!dcfg) return <div>未知下载器</div>
+  const dcfg = dc[dlType] || {}
 
   // 图片转码/压缩只在浏览器下载流程中执行；外部下载器只能拿到原始图片 URL。
   const renderBrowserImageFields = () => (
@@ -370,7 +360,7 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
           value={cfg.image_convert_codecs}
           onChange={(e) => {
             cfg.image_convert_codecs = (e.target as HTMLSelectElement).value
-            forceRender((v) => v + 1)
+            notify()
           }}
         >
           <option value="default">默认</option>
@@ -386,7 +376,7 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
           value={cfg.image_resize_codecs}
           onChange={(e) => {
             cfg.image_resize_codecs = (e.target as HTMLSelectElement).value
-            forceRender((v) => v + 1)
+            notify()
           }}
         >
           <option value="default">默认</option>
@@ -409,7 +399,7 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
         value={cfg.image_quality}
         onChange={(e) => {
           cfg.image_quality = Number((e.target as HTMLInputElement).value)
-          forceRender((v) => v + 1)
+          notify()
         }}
       />
       <div className={c.hintText}>压缩率仅当转码或尺寸压缩开启时生效，推荐 60% 以上。</div>
@@ -460,6 +450,7 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
               const next = (e.target as HTMLSelectElement).value
               setDlType(next)
               cfg.using_downloader = next
+              notify()
             }}
           >
             <option value="browser">浏览器</option>
@@ -549,24 +540,6 @@ const DownloaderConfigTab = ({ cfg, onSave }: { cfg: any; onSave?: () => void })
         </fieldset>
       )}
       <div className={c.hintText}>选择下载器后填写对应配置；浏览器下载不需要额外连接配置，但可使用上面的图片转码/压缩设置。</div>
-      <div style={{ display: "flex", gap: theme.spacing.sm, marginTop: theme.spacing.md }}>
-        <button
-          className={c.btn}
-          onClick={() => {
-            if (onSave) onSave()
-            else {
-              Config.global.features = cfg
-              Config.global.save()
-              alert("配置已保存")
-            }
-          }}
-        >
-          保存
-        </button>
-        <button className={c.btnDanger} onClick={resetDefaults}>
-          重置默认
-        </button>
-      </div>
     </div>
   )
 }
@@ -656,22 +629,40 @@ export const ConfigModalApp = ({ config, modal }: { config: Config; modal?: Moda
     setSaveVersion((v) => v + 1)
     alert("配置已保存")
   }
+  const onEdit = () => setCfg({ ...cfg })
+  const onCancel = () => setCfg(config.clone_features())
+  const onResetDefaults = () => {
+    if (!confirm("确定重置为默认配置？此操作会覆盖当前所有配置，包括下载器、图片、文件命名等。")) return
+    setCfg(Config.default_features())
+  }
   const t = tabs.find((t) => t.id === tab)!
   const props = (id: string) => {
-    if (id === "settings") return { cfg, onSave, dirty }
-    if (id === "downloader") return { cfg, onSave }
+    if (id === "settings") return { cfg, onChange: onEdit, onResetDefaults }
+    if (id === "downloader") return { cfg, onChange: onEdit }
     return {}
   }
   const Comp = t.Comp as any
   return (
     <div className={c.container}>
-      <nav className={c.nav}>
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={navCls(tab === t.id)}>
-            {t.title}
-          </button>
-        ))}
-      </nav>
+      <div className={c.header}>
+        <nav className={c.nav}>
+          {tabs.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} className={navCls(tab === t.id)}>
+              {t.title}
+            </button>
+          ))}
+        </nav>
+        {dirty && (
+          <div className={c.actions}>
+            <button className={c.btnDanger} onClick={onCancel}>
+              取消
+            </button>
+            <button className={c.btnSaveDirty} onClick={onSave}>
+              保存
+            </button>
+          </div>
+        )}
+      </div>
       <div className={c.content}>
         <Comp {...props(tab)} />
       </div>

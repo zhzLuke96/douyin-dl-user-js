@@ -26,6 +26,10 @@ export class Config {
     filename_template: "`${nickname}_${short_id}_${tags}_${desc}`",
   }
 
+  static default_features(): Features {
+    return new Config(false).clone_features()
+  }
+
   static global = new Config()
 
   events = new Emitter<{
@@ -142,7 +146,8 @@ export class Config {
 
   private _key = "__douyin-dl-user-js__"
 
-  constructor() {
+  constructor(load = true) {
+    if (!load) return
     try {
       this.load()
     } catch (error) {
