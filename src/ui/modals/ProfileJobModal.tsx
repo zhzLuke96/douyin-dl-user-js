@@ -366,7 +366,7 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
             <tbody>
               {filteredList.map((item) => {
                 const media = item.media
-                const coverUrl = media.video?.originCoverUrlList?.[0] || media.video?.dynamicCover || media.video?.cover || media.images?.[0]?.urlList?.[0] || ""
+                const coverUrl = media.video?.dynamicCover || media.video?.originCoverUrlList?.[0] || media.video?.cover || media.images?.[0]?.urlList?.[0] || ""
                 const desc = media.desc || "(无描述)"
                 const createDate = media.createTime ? new Date(media.createTime * 1000).toLocaleDateString() : "-"
                 const typeLabel = item.type === "album" ? "图集" : "视频"
@@ -462,7 +462,12 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
               暂停
             </button>
           )}
-          <button className={s.btn} onClick={() => { if (confirm("确定重置当前作者的下载记录吗？这将清除已下载和失败记录。")) downloadManager.resetState() }}>
+          <button
+            className={s.btn}
+            onClick={() => {
+              if (confirm("确定重置当前作者的下载记录吗？这将清除已下载和失败记录。")) downloadManager.resetState()
+            }}
+          >
             重置
           </button>
           <button className={s.btn} onClick={() => downloadManager.mediaHandler.open_config_modal()}>

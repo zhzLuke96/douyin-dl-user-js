@@ -199,13 +199,26 @@ export class DOMPatcher {
     if (!awemeId) return
     const pos = window.getComputedStyle(card).position
     if (!pos || pos === "static") card.style.position = "relative"
-    const badge = document.createElement("label")
-    badge.className = this.feed_card_selector_cls
+
+    const mask = document.createElement("div")
+    mask.className = this.feed_card_selector_cls
+    mask.setAttribute("role", "button")
+    mask.setAttribute("aria-label", "切换视频选择")
+    Object.assign(mask.style, {
+      position: "absolute",
+      inset: "0",
+      zIndex: "10",
+      cursor: "pointer",
+      background: "transparent",
+      userSelect: "none",
+      touchAction: "manipulation",
+    })
+
+    const badge = document.createElement("div")
     Object.assign(badge.style, {
       position: "absolute",
       top: "10px",
       left: "10px",
-      zIndex: "5",
       display: "inline-flex",
       alignItems: "center",
       gap: "6px",
@@ -216,31 +229,42 @@ export class DOMPatcher {
       color: "#fff",
       fontSize: "12px",
       fontFamily: "sans-serif",
-      cursor: "pointer",
+      pointerEvents: "none",
       userSelect: "none",
     })
     const cb = document.createElement("input")
     cb.type = "checkbox"
     cb.className = "dy-dl-feed-checkbox"
-    cb.style.cssText = "margin: 0; cursor: pointer;"
-    cb.checked = this.profilePageHandler.downloadManager._isFeedSelected(awemeId)
+    cb.style.cssText = "margin: 0; pointer-events: none;"
     const label = document.createElement("span")
     label.className = "dy-dl-feed-select-label"
     label.textContent = "选择"
-    const stop = (ev: Event) => ev.stopPropagation()
-    ;["click", "mousedown", "mouseup", "touchstart"].forEach((n) => badge.addEventListener(n, stop))
-    cb.addEventListener("change", (ev) => {
-      ev.stopPropagation()
-      this.profilePageHandler.downloadManager.markSelect(awemeId, cb.checked)
-    })
     badge.append(cb, label)
-    card.appendChild(badge)
+    mask.append(badge)
+    card.appendChild(mask)
+
+    const renderState = (selected: boolean) => {
+      cb.checked = selected
+      mask.setAttribute("aria-pressed", selected ? "true" : "false")
+      mask.style.boxShadow = selected ? "inset 0 0 0 2px rgba(64,150,255,0.75)" : "none"
+    }
+
+    const toggle = (ev: Event) => {
+      ev.preventDefault()
+      ev.stopPropagation()
+      const selected = !this.profilePageHandler.downloadManager._isFeedSelected(awemeId)
+      this.profilePageHandler.downloadManager.markSelect(awemeId, selected)
+    }
+    mask.addEventListener("click", toggle)
+    mask.addEventListener("mousedown", (ev) => ev.stopPropagation())
+
+    renderState(this.profilePageHandler.downloadManager._isFeedSelected(awemeId))
     const off = this.profilePageHandler.downloadManager.on("countsUpdated", () => {
-      if (!badge.parentElement) {
+      if (!mask.parentElement) {
         off()
         return
       }
-      cb.checked = this.profilePageHandler.downloadManager._isFeedSelected(awemeId)
+      renderState(this.profilePageHandler.downloadManager._isFeedSelected(awemeId))
     })
   }
 
