@@ -4,7 +4,7 @@
 
 - [greasyfork](https://greasyfork.org/zh-CN/scripts/522326-%E6%8A%96%E9%9F%B3%E4%B8%8B%E8%BD%BD)
 - [github](https://github.com/zhzLuke96/douyin-dl-user-js)
-- [github release 安装](https://github.com/zhzLuke96/douyin-dl-user-js/releases/latest/download/dy-dl.user.js)
+- [👉点击安装👈](https://github.com/zhzLuke96/douyin-dl-user-js/releases/latest/download/dy-dl.user.js)
 
 ## Features
 
@@ -26,6 +26,7 @@
 
 ## Change log
 
+- 260803 1.5.0 重构和功能增强 （修改脚本同步地址）
 - 260412 1.4.2 ui 优化
 - 260411 1.4.1
   - 作者主页支持批量下载、暂停继续、按已下载记录补漏、筛选选择
@@ -90,11 +91,9 @@
 
 <img width="729" height="764" alt="image" src="https://github.com/user-attachments/assets/0d067b13-bbee-460f-a9a3-e0c47010603f" />
 
-
 ### 配置和历史
 
 <img width="578" height="656" alt="image" src="https://github.com/user-attachments/assets/5b1d6b53-ad86-4380-9a44-b4b8288dc2ec" />
-
 
 #### 视频下载
 
@@ -116,11 +115,12 @@
 
 <img width="555" height="142" alt="image" src="https://github.com/user-attachments/assets/dc0458af-82db-4f8b-94fd-bf02fda118d5" />
 
-
 #### 下载器配置
+
 支持使用外部下载器下载文件，方便归档整理。
 
 目前支持：
+
 - [abdm](https://github.com/amir1376/ab-download-manager)
 - [aria2](https://github.com/aria2/aria2)
 
