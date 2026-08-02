@@ -6,6 +6,8 @@ import { Modal } from "../ui/modals/Modal"
 import { createToast } from "../utils/dom"
 import { formatDate, runInContext } from "../utils/format"
 import type { PlayerInstanceLite } from "../types/lite"
+import { DouyinMedia } from "@/types"
+import { getBestCoverUrl } from "./douyin/getBestCoverUrl"
 
 // #region 主入口组件 ---
 /**
@@ -15,7 +17,7 @@ import type { PlayerInstanceLite } from "../types/lite"
  */
 export class MediaHandler {
   player: PlayerInstanceLite | null = null
-  current_media: any = null
+  current_media: DouyinMedia.MediaRoot | null = null
   downloading = false
   downloader: Downloader
   download_current_media: (...args: any[]) => Promise<void>
@@ -39,11 +41,14 @@ export class MediaHandler {
    * max length: 64
    */
   _build_filename(
-    media: any = this.current_media,
+    media = this.current_media,
     filename_template = Config.global.features.filename_template || Config.defaults.filename_template,
     filename_max_length = Config.global.features.filename_max_length || 64,
     throw_err = false,
   ): string {
+    if (!media) {
+      throw new Error("缺少 media")
+    }
     const {
       authorInfo: { nickname },
       awemeId,
@@ -305,12 +310,23 @@ export class MediaHandler {
 
   // 下载封面
   async download_thumb() {
+    // 1. 检查媒体是否存在
     if (!this.current_media) {
-      alert("[dy-dl]无当前媒体信息")
+      alert("[dy-dl] 无当前媒体信息")
       return
     }
-    const thumb = this.current_media.video.originCoverUrlList[1] || this.current_media.video.originCoverUrlList[0]
-    this.downloader.download_file(thumb, "thumb_" + this._build_filename(this.current_media), [], { media: this.current_media })
+
+    // 2. 调用独立的提取函数，获得最高清封面 URL
+    const bestThumb = getBestCoverUrl(this.current_media)
+
+    // 3. 结果处理
+    if (!bestThumb) {
+      alert("[dy-dl] 未找到任何可用的封面图")
+      return
+    }
+
+    // 4. 执行下载
+    this.downloader.download_file(bestThumb, "thumb_" + this._build_filename(this.current_media), [], { media: this.current_media })
   }
 
   // 显示媒体详情
