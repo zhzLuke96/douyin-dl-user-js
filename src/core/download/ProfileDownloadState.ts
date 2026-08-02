@@ -12,6 +12,8 @@ export interface ProfileState {
   knownIds: string[]
   downloadedIds: string[]
   failedItems: Record<string, { count?: number; reason?: string; updatedAt?: number; desc?: string }>
+  coverDownloadedIds: string[]
+  coverFailedItems: Record<string, { count?: number; reason?: string; updatedAt?: number; desc?: string }>
 }
 
 export class ProfileDownloadState {
@@ -36,6 +38,8 @@ export class ProfileDownloadState {
       knownIds: [],
       downloadedIds: [],
       failedItems: {} as ProfileState["failedItems"],
+      coverDownloadedIds: [],
+      coverFailedItems: {} as ProfileState["coverFailedItems"],
     }
   }
 
@@ -56,6 +60,8 @@ export class ProfileDownloadState {
         knownIds: Array.isArray(parsed.knownIds) ? parsed.knownIds : [],
         downloadedIds: Array.isArray(parsed.downloadedIds) ? parsed.downloadedIds : [],
         failedItems: parsed.failedItems && typeof parsed.failedItems === "object" ? parsed.failedItems : {},
+        coverDownloadedIds: Array.isArray(parsed.coverDownloadedIds) ? parsed.coverDownloadedIds : [],
+        coverFailedItems: parsed.coverFailedItems && typeof parsed.coverFailedItems === "object" ? parsed.coverFailedItems : {},
       }
     } catch (error) {
       console.error("[dy-dl]加载作者下载状态失败", error)

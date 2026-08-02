@@ -51,7 +51,7 @@ const s = {
     transition: "0.2s",
     minWidth: "60px",
     wordBreak: "keep-all",
-    whiteSpace: "nowrap"
+    whiteSpace: "nowrap",
   }),
   btnPrimary: css({
     flex: 1,
@@ -66,7 +66,7 @@ const s = {
     transition: "0.2s",
     minWidth: "60px",
     wordBreak: "keep-all",
-    whiteSpace: "nowrap"
+    whiteSpace: "nowrap",
   }),
   btnDanger: css({
     flex: 1,
@@ -81,7 +81,7 @@ const s = {
     transition: "0.2s",
     minWidth: "60px",
     wordBreak: "keep-all",
-    whiteSpace: "nowrap"
+    whiteSpace: "nowrap",
   }),
   summary: css({ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "8px", lineHeight: 1.4, whiteSpace: "pre-line" }),
 }
@@ -169,8 +169,8 @@ export const FloatingPanelApp = ({
                 开始下载
               </button>
             ) : (
-              <button className={s.btnDanger} onClick={() => downloadManager.stopJob()}>
-                停止
+              <button className={s.btnDanger} onClick={() => downloadManager.pauseJob()}>
+                暂停
               </button>
             )}
           </div>

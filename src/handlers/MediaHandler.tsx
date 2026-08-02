@@ -304,6 +304,19 @@ export class MediaHandler {
     return { ok: false, reason: "no_valid_media" }
   }
 
+  async _download_cover_logic(media: any, options: any = {}): Promise<any> {
+    const { alertOnFail = true } = options
+    if (!media) {
+      if (alertOnFail) alert("[dy-dl]无当前媒体信息")
+      return { ok: false, reason: "missing_media" }
+    }
+    const coverUrl = getBestCoverUrl(media)
+    if (!coverUrl) return { ok: false, reason: "no_cover" }
+    const ok = await this.downloader.download_file(coverUrl, "thumb_" + this._build_filename(media), [], { silent: !alertOnFail, media })
+    if (!ok) return { ok: false, reason: "cover_download_failed" }
+    return { ok: true }
+  }
+
   async _download_current_media_logic() {
     return this._download_media_logic(this.current_media, { toastTarget: document.querySelector(".dy-dl-video-btn"), alertOnFail: true, addHistory: true })
   }
