@@ -20,7 +20,6 @@ export default tseslint.config(
     ignores: [
       "dist/",
       "node_modules/",
-      "dy-dl.user.js",
       "docs/",
       "build.mjs",
       "*.config.*",

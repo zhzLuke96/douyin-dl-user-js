@@ -45,7 +45,6 @@
 
 ```
 douyin-dl-user-js/
-├── dy-dl.user.js              # 原始单文件 (基线, 只读)
 ├── dist/dy-dl.user.js         # 构建产物 (油猴脚本)
 ├── build.mjs                  # esbuild 构建脚本
 ├── tsconfig.json              # TS 编译配置
@@ -534,7 +533,7 @@ const res = await DownloaderLauncher.request_cors(url, {
 
 ## 附: 原始脚本对照
 
-原始单文件 `dy-dl.user.js` (6362 行) 保留为只读基线。
+原始单文件 `dy-dl.user.js` 已从仓库移除，当前以 `src/` 为唯一源码；下表保留迁移对照供参考。
 
 | 原始 #region | 迁移至 |
 |-------------|--------|
