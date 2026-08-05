@@ -221,6 +221,22 @@ const s = {
     borderRadius: "3px",
     transition: "width 0.3s",
   }),
+  squareContainer: css({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "3px",
+    maxHeight: "84px",
+    overflowY: "auto",
+    padding: "8px",
+    marginTop: theme.spacing.sm,
+    background: "rgba(0,0,0,0.28)",
+    borderRadius: theme.borderRadius.sm,
+  }),
+  square: css({ width: "12px", height: "12px", borderRadius: "2px", flex: "0 0 12px" }),
+  squarePending: css({ background: "#2a2a2a" }),
+  squareRunning: css({ background: "#ffb74d" }),
+  squareSuccess: css({ background: "#66bb6a" }),
+  squareFailed: css({ background: "#ef5350" }),
   footer: css({
     padding: "8px 32px",
     fontSize: "11px",
@@ -299,10 +315,16 @@ const s = {
 }
 
 // ========== 组件 ==========
+const clampConcurrency = (value: number): number => {
+  const next = Number.isFinite(value) ? Math.floor(value) : 1
+  return Math.min(Math.max(next, 1), 5)
+}
+
 export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManager: ProfileDownloadManager; onClose: () => void }) => {
   const [snap, setSnap] = useState(() => downloadManager.getSnapshot())
   const [searchText, setSearchText] = useState("")
   const [typeFilter, setTypeFilter] = useState("all") // 'all' | 'video' | 'album'
+  const [concurrency, setConcurrency] = useState(1)
   const logRef = useRef<HTMLDivElement>(null)
 
   const buildMediaList = useCallback(() => {
@@ -380,12 +402,16 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
     downloadManager.markSelect(awemeId, checked)
   }
 
-  const startJob = async (downloadType: DownloadType = "content") => {
+  const startJob = async (downloadType: DownloadType = "content", runConcurrency = concurrency) => {
     try {
-      await downloadManager.startJob(downloadType)
+      await downloadManager.startJob(downloadType, runConcurrency)
     } catch (e: any) {
       alert(e.message || e)
     }
+  }
+
+  const updateConcurrency = (value: number) => {
+    setConcurrency(clampConcurrency(value))
   }
 
   const resumeJob = async () => {
@@ -434,6 +460,7 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
           <div className={s.jobContent}>
             <div className={s.jobSummary}>
               <span>下载类型: {downloadType === "cover" ? "封面" : "内容"}</span>
+              <span>并发: {snap.concurrency || concurrency}</span>
               <span>已选: {snap.counts.selected}</span>
               <span>成功: {progressCount}</span>
               <span>失败: {downloadType === "cover" ? snap.counts.coverFailed : snap.counts.failed}</span>
@@ -448,6 +475,27 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
               </div>
               <div className={s.progressBarContainer}>
                 <div className={s.progressBarFill} style={{ width: (progressCount / progressTotal) * 100 + "%" }} />
+              </div>
+              <div className={s.squareContainer}>
+                {Object.entries(snap.itemStatuses || {}).map(([id, status]) => (
+                  <div
+                    key={id}
+                    className={
+                      s.square +
+                      (status === "success"
+                        ? " " + s.squareSuccess
+                        : status === "failed"
+                          ? " " + s.squareFailed
+                          : status === "running"
+                            ? " " + s.squareRunning
+                            : " " + s.squarePending)
+                    }
+                    title={id}
+                  />
+                ))}
+              </div>
+              <div className={s.progressLabel}>
+                <span>黑=等待 黄=下载中 绿=成功 红=失败</span>
               </div>
             </div>
 
@@ -645,10 +693,17 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
               <button className={s.btn} onClick={() => handleSelectAll(!isFilteredAllSelected)} disabled={filteredList.length === 0}>
                 {isFilteredAllSelected ? "取消全选" : "全选"}
               </button>
-              <button className={s.btnPrimary} onClick={() => startJob("content")} disabled={snap.counts.selected === 0}>
+              <select className={s.typeFilterSelect} value={concurrency} onChange={(e) => updateConcurrency(Number((e.target as HTMLSelectElement).value))}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    并发 {n}
+                  </option>
+                ))}
+              </select>
+              <button className={s.btnPrimary} onClick={() => startJob("content", concurrency)} disabled={snap.counts.selected === 0}>
                 开始下载
               </button>
-              <button className={s.btn} onClick={() => startJob("cover")} disabled={snap.counts.selected === 0}>
+              <button className={s.btn} onClick={() => startJob("cover", concurrency)} disabled={snap.counts.selected === 0}>
                 下载封面
               </button>
               <button

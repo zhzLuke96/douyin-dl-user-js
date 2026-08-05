@@ -18,6 +18,7 @@ interface Events extends Record<string, any[]> {
 
 export type DownloadType = "content" | "cover"
 export type JobLogStatus = "info" | "running" | "success" | "failed"
+export type JobItemStatus = "pending" | "running" | "success" | "failed"
 
 export interface JobLogEntry {
   time: number
@@ -44,6 +45,10 @@ export class ProfileDownloadManager extends Emitter<Events> {
   jobEndRequested = false
   jobLog: JobLogEntry[] = []
   currentDownloadType: DownloadType = "content"
+  /** 本次任务并发数，不写入全局配置 */
+  private _concurrency = 1
+  /** 本次任务的方块状态，不持久化 */
+  private _itemStatus: Record<string, JobItemStatus> = {}
   /** 选中的媒体 */
   selectedIds = new Set<string>()
   private collect_timer: ReturnType<typeof setInterval> | null = null
@@ -178,6 +183,27 @@ export class ProfileDownloadManager extends Emitter<Events> {
     }
   }
 
+  private _normalizeConcurrency(value: unknown): number {
+    const raw = Number(value)
+    const next = Number.isFinite(raw) ? Math.floor(raw) : 1
+    return Math.min(Math.max(next, 1), 5)
+  }
+
+  private _deriveItemStatuses(): Record<string, JobItemStatus> {
+    const statuses: Record<string, JobItemStatus> = {}
+    if (!this.jobState) return statuses
+    const isCover = this.currentDownloadType === "cover"
+    const downloadedSet = new Set(isCover ? this.jobState.coverDownloadedIds || [] : this.jobState.downloadedIds || [])
+    const failedItems = isCover ? this.jobState.coverFailedItems || {} : this.jobState.failedItems || {}
+    const failedSet = new Set(Object.keys(failedItems))
+    this.selectedIds.forEach((id) => {
+      if (failedSet.has(id)) statuses[id] = "failed"
+      else if (downloadedSet.has(id)) statuses[id] = "success"
+      else statuses[id] = "pending"
+    })
+    return statuses
+  }
+
   getSnapshot(profileNameFallback = "当前作者主页") {
     if (!this.jobState) this._ensureJobState()
     const isProfilePage = this.dataService.isProfilePage()
@@ -197,6 +223,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
             ? "已结束"
             : "待开始"
     const counts = this.getCounts()
+    const itemStatuses = Object.keys(this._itemStatus).length > 0 ? this._itemStatus : this._deriveItemStatuses()
     return {
       jobRunning: this.jobRunning,
       jobStopRequested: this.jobStopRequested,
@@ -206,6 +233,8 @@ export class ProfileDownloadManager extends Emitter<Events> {
       counts,
       jobLog: this.jobLog.slice(),
       downloadType: this.currentDownloadType,
+      concurrency: this._concurrency,
+      itemStatuses: { ...itemStatuses },
       summary: `${statusLabel} 选择/发现: ${this.selectedIds.size}/${this.jobState?.knownIds?.length || 0}\n内容已下载: ${counts.downloaded} 失败: ${counts.failed}\n封面已下载: ${counts.coverDownloaded} 失败: ${counts.coverFailed}`,
     }
   }
@@ -218,6 +247,8 @@ export class ProfileDownloadManager extends Emitter<Events> {
     this.jobLog = []
     ProfileDownloadState.reset(profile.profileKey)
     this.currentDownloadType = "content"
+    this._concurrency = 1
+    this._itemStatus = {}
     this.jobState = ProfileDownloadState.create_default(profile)
     this.collect()
     this.emit("stateChanged", this)
@@ -241,7 +272,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
   resumeJob() {
     if (this.jobRunning) return
     if (this.jobState?.status !== "paused") return
-    return this.startJob(this.currentDownloadType)
+    return this.startJob(this.currentDownloadType, this._concurrency)
   }
 
   // 结束当前下载阶段，回到选择阶段
@@ -258,7 +289,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
   }
 
   // 启动下载循环（由外部调用，这里只做前置准备）
-  async startJob(downloadType: DownloadType = this.currentDownloadType) {
+  async startJob(downloadType: DownloadType = this.currentDownloadType, concurrency = 1) {
     if (!this.dataService.isProfilePage()) throw new Error("请在作者主页中使用全量下载。")
     if (this.jobRunning) return
     if (this.mediaHandler.downloading) throw new Error("当前已有下载任务在进行中。")
@@ -266,6 +297,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
     const resuming = this.jobState?.status === "paused" && downloadType === this.currentDownloadType
     if (!resuming) this.jobLog = []
     this.currentDownloadType = downloadType
+    this._concurrency = this._normalizeConcurrency(concurrency)
     this.jobRunning = true
     this.jobStopRequested = false
     this.jobEndRequested = false
@@ -303,6 +335,8 @@ export class ProfileDownloadManager extends Emitter<Events> {
     const failedSet = new Set(Object.keys(failedItems))
     const selectedIdsArray = Array.from(this.selectedIds)
     const pendingIds = selectedIdsArray.filter((id) => !downloadedSet.has(id) || failedSet.has(id))
+    this._itemStatus = this._deriveItemStatuses()
+    this.emit("stateChanged", this)
 
     if (pendingIds.length === 0) {
       this.jobState.status = this.jobEndRequested ? "idle" : "completed"
@@ -316,51 +350,17 @@ export class ProfileDownloadManager extends Emitter<Events> {
       return
     }
 
-    // 依次下载每个选中的作品
-    for (const awemeId of pendingIds) {
-      if (this.jobStopRequested) {
-        this.jobState.status = this.jobEndRequested ? "idle" : "paused"
-        this._saveJobState()
-        this.emit("stateChanged", this)
-        return
-      }
-      // 从缓存中获取媒体对象
-      const media = this.dataService.feedMediaCache.get(awemeId)
-      if (!media) {
-        const fakeMedia = { awemeId, desc: "未缓存" }
-        console.warn("[dy-dl] 缓存中未找到作品", awemeId)
-        this._push_log("failed", "缓存中未找到作品，已标记失败", fakeMedia)
-        this.markFailed(fakeMedia, "cache_miss", downloadType)
-        this._saveJobState()
-        this.emit("countsUpdated", this.getCounts())
-        continue
-      }
-      this._push_log("running", "开始下载", media)
-      // 执行下载（复用 mediaHandler 的下载逻辑）
-      const result =
-        downloadType === "cover"
-          ? await this.mediaHandler._download_cover_logic(media, { alertOnFail: false })
-          : await this.mediaHandler._download_media_logic(media, {
-              toastTarget: null,
-              toast: { update: () => {} },
-              toastPrefix: "批量下载",
-              alertOnFail: false,
-              addHistory: true,
-            })
-      const reason = result?.reason || (downloadType === "cover" ? "cover_download_failed" : "download_failed")
-      if (result?.ok) {
-        this.markDownloaded(media, downloadType)
-        this._push_log("success", "下载成功", media)
-      } else {
-        this.markFailed(media, reason, downloadType)
-        this._push_log("failed", "下载失败：" + reason, media)
-      }
-      this._saveJobState()
-      this.emit("countsUpdated", this.getCounts())
-      // 可选：每下载一个后稍作延迟，避免请求过快
-      await new Promise((r) => setTimeout(r, 500))
-    }
+    // 按本次任务并发数下载选中的作品
+    const concurrency = this._concurrency
+    this._push_log("info", `并发数：${concurrency}`)
+    await this._runConcurrentWorkers(pendingIds, downloadType, concurrency)
     if (!this.jobState) return
+    if (this.jobStopRequested) {
+      this.jobState.status = this.jobEndRequested ? "idle" : "paused"
+      this._saveJobState()
+      this.emit("stateChanged", this)
+      return
+    }
     // 任务完成
     this.jobState.status = this.jobEndRequested ? "idle" : "completed"
     if (this.jobState.status === "completed") this.jobState.completedAt = Date.now()
@@ -370,5 +370,76 @@ export class ProfileDownloadManager extends Emitter<Events> {
       this.emit("jobCompleted")
     }
     this.emit("stateChanged", this)
+  }
+
+  private async _downloadOne(awemeId: string, downloadType: DownloadType): Promise<void> {
+    if (this.jobStopRequested) return
+    const media = this.dataService.feedMediaCache.get(awemeId)
+    if (!media) {
+      const fakeMedia = { awemeId, desc: "未缓存" }
+      console.warn("[dy-dl] 缓存中未找到作品", awemeId)
+      this._itemStatus[awemeId] = "failed"
+      this._push_log("failed", "缓存中未找到作品，已标记失败", fakeMedia)
+      this.markFailed(fakeMedia, "cache_miss", downloadType)
+      this._saveJobState()
+      this.emit("stateChanged", this)
+      this.emit("countsUpdated", this.getCounts())
+      return
+    }
+    this._itemStatus[awemeId] = "running"
+    this.emit("stateChanged", this)
+    this._push_log("running", "开始下载", media)
+    // 执行下载（复用 mediaHandler 的下载逻辑）
+    const result =
+      downloadType === "cover"
+        ? await this.mediaHandler._download_cover_logic(media, { alertOnFail: false })
+        : await this.mediaHandler._download_media_logic(media, {
+            toastTarget: null,
+            toast: { update: () => {} },
+            toastPrefix: "批量下载",
+            alertOnFail: false,
+            addHistory: true,
+          })
+    const reason = result?.reason || (downloadType === "cover" ? "cover_download_failed" : "download_failed")
+    if (result?.ok) {
+      this._itemStatus[awemeId] = "success"
+      this.markDownloaded(media, downloadType)
+      this._push_log("success", "下载成功", media)
+    } else {
+      this._itemStatus[awemeId] = "failed"
+      this.markFailed(media, reason, downloadType)
+      this._push_log("failed", "下载失败：" + reason, media)
+    }
+    this._saveJobState()
+    this.emit("stateChanged", this)
+    this.emit("countsUpdated", this.getCounts())
+    // 每项下载后稍作延迟，降低并发请求过快风险
+    await new Promise((r) => setTimeout(r, 500))
+  }
+
+  private async _runConcurrentWorkers(pendingIds: string[], downloadType: DownloadType, concurrency: number): Promise<void> {
+    let cursor = 0
+    const worker = async () => {
+      while (!this.jobStopRequested) {
+        const index = cursor++
+        if (index >= pendingIds.length) return
+        const awemeId = pendingIds[index]
+        try {
+          await this._downloadOne(awemeId, downloadType)
+        } catch (error) {
+          const media = this.dataService.feedMediaCache.get(awemeId)
+          const fallbackMedia = { awemeId, desc: "下载异常" }
+          console.error("[dy-dl] 批量下载任务异常", error)
+          this._itemStatus[awemeId] = "failed"
+          this._push_log("failed", "下载异常：" + (error instanceof Error ? error.message : String(error)), media || fallbackMedia)
+          this.markFailed(media || fallbackMedia, "unexpected_error", downloadType)
+          this._saveJobState()
+          this.emit("stateChanged", this)
+          this.emit("countsUpdated", this.getCounts())
+        }
+      }
+    }
+    const workerCount = Math.min(concurrency, pendingIds.length)
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
   }
 }
