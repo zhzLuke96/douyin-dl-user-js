@@ -347,7 +347,13 @@ const DownloaderConfigTab = ({ cfg, onChange }: { cfg: any; onChange: () => void
     cfg.downloader_config = { ...dc }
     notify()
   }
-  const dcfg = dc[dlType] || {}
+  const rawDcfg = dc[dlType] || {}
+  const downloaderDefaults = (Config.default_features().downloader_config as any)[dlType] || {}
+  const dcfg = {
+    ...downloaderDefaults,
+    ...rawDcfg,
+    dir: { ...(downloaderDefaults.dir || {}), ...(rawDcfg.dir || {}) },
+  }
 
   // 图片转码/压缩只在浏览器下载流程中执行；外部下载器只能拿到原始图片 URL。
   const renderBrowserImageFields = () => (
@@ -406,19 +412,20 @@ const DownloaderConfigTab = ({ cfg, onChange }: { cfg: any; onChange: () => void
     </>
   )
 
+  const defaultDirs = downloaderDefaults.dir || {}
   const renderDirFields = () => (
     <>
       <div className={c.row}>
         <span className={c.label}>视频目录</span>
-        <input className={c.input} value={dcfg.dir?.video || ""} onChange={(e) => setField("dir.video", (e.target as HTMLInputElement).value)} />
+        <input className={c.input} value={dcfg.dir?.video || defaultDirs.video || ""} onChange={(e) => setField("dir.video", (e.target as HTMLInputElement).value)} />
       </div>
       <div className={c.row}>
         <span className={c.label}>图片目录</span>
-        <input className={c.input} value={dcfg.dir?.image || ""} onChange={(e) => setField("dir.image", (e.target as HTMLInputElement).value)} />
+        <input className={c.input} value={dcfg.dir?.image || defaultDirs.image || ""} onChange={(e) => setField("dir.image", (e.target as HTMLInputElement).value)} />
       </div>
       <div className={c.row}>
         <span className={c.label}>其他目录</span>
-        <input className={c.input} value={dcfg.dir?.other || ""} onChange={(e) => setField("dir.other", (e.target as HTMLInputElement).value)} />
+        <input className={c.input} value={dcfg.dir?.other || defaultDirs.other || ""} onChange={(e) => setField("dir.other", (e.target as HTMLInputElement).value)} />
       </div>
       <div className={c.hintText}>
         可用变量：<span className={c.codeBlock}>{"${user_dir}"}</span> <span className={c.codeBlock}>{"${nickname}"}</span> <span className={c.codeBlock}>{"${uid}"}</span>{" "}
@@ -428,11 +435,11 @@ const DownloaderConfigTab = ({ cfg, onChange }: { cfg: any; onChange: () => void
         使用模板字符串语法，如：<span className={c.codeBlock}>{"`./douyin/${user_dir}/videos`"}</span>
       </div>
       <div className={c.hintText}>
-        预览视频目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.video || "")}</span>
+        预览视频目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.video || defaultDirs.video || "")}</span>
         <br />
-        预览图片目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.image || "")}</span>
+        预览图片目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.image || defaultDirs.image || "")}</span>
         <br />
-        预览其他目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.other || "")}</span>
+        预览其他目录：<span className={c.codeBlock}>{previewDirPath(dcfg.dir?.other || defaultDirs.other || "")}</span>
       </div>
     </>
   )
@@ -487,15 +494,15 @@ const DownloaderConfigTab = ({ cfg, onChange }: { cfg: any; onChange: () => void
           <legend className={c.legend}>Aria2</legend>
           <div className={c.row}>
             <span className={c.label}>Domain</span>
-            <input className={c.input} value={dcfg.domain || ""} onChange={(e) => setField("domain", (e.target as HTMLInputElement).value)} />
+            <input className={c.input} value={dcfg.domain || "http://localhost"} onChange={(e) => setField("domain", (e.target as HTMLInputElement).value)} />
           </div>
           <div className={c.row}>
             <span className={c.label}>Port</span>
-            <input className={c.input} value={dcfg.port || ""} onChange={(e) => setField("port", (e.target as HTMLInputElement).value)} />
+            <input className={c.input} value={dcfg.port || "6800"} onChange={(e) => setField("port", (e.target as HTMLInputElement).value)} />
           </div>
           <div className={c.row}>
             <span className={c.label}>Path</span>
-            <input className={c.input} value={dcfg.path || ""} onChange={(e) => setField("path", (e.target as HTMLInputElement).value)} />
+            <input className={c.input} value={dcfg.path || "/jsonrpc"} onChange={(e) => setField("path", (e.target as HTMLInputElement).value)} />
           </div>
           <div className={c.row}>
             <span className={c.label}>Token</span>
@@ -509,7 +516,7 @@ const DownloaderConfigTab = ({ cfg, onChange }: { cfg: any; onChange: () => void
           <legend className={c.legend}>IDM</legend>
           <div className={c.row}>
             <span className={c.label}>ID</span>
-            <input className={c.input} value={dcfg.id || ""} onChange={(e) => setField("id", (e.target as HTMLInputElement).value)} />
+            <input className={c.input} value={dcfg.id || "1"} onChange={(e) => setField("id", (e.target as HTMLInputElement).value)} />
           </div>
         </fieldset>
       )}
@@ -518,15 +525,15 @@ const DownloaderConfigTab = ({ cfg, onChange }: { cfg: any; onChange: () => void
           <legend className={c.legend}>BitComet</legend>
           <div className={c.row}>
             <span className={c.label}>Domain</span>
-            <input className={c.input} value={dcfg.domain || ""} onChange={(e) => setField("domain", (e.target as HTMLInputElement).value)} />
+            <input className={c.input} value={dcfg.domain || "http://localhost"} onChange={(e) => setField("domain", (e.target as HTMLInputElement).value)} />
           </div>
           <div className={c.row}>
             <span className={c.label}>Port</span>
-            <input className={c.input} value={dcfg.port || ""} onChange={(e) => setField("port", (e.target as HTMLInputElement).value)} />
+            <input className={c.input} value={dcfg.port || "8080"} onChange={(e) => setField("port", (e.target as HTMLInputElement).value)} />
           </div>
           <div className={c.row}>
             <span className={c.label}>Path</span>
-            <input className={c.input} value={dcfg.path || ""} onChange={(e) => setField("path", (e.target as HTMLInputElement).value)} />
+            <input className={c.input} value={dcfg.path || "/panel/task_add_httpftp_result"} onChange={(e) => setField("path", (e.target as HTMLInputElement).value)} />
           </div>
           <div className={c.row}>
             <span className={c.label}>Auth Name</span>

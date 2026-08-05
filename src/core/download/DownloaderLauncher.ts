@@ -85,7 +85,7 @@ export class DownloaderLauncher {
       case "aria2":
         return this.launchAria2(url, filename, {}, { dir: resolvedDir })
       case "bc":
-        return this.launchBitComet(url, filename, {}, null)
+        return this.launchBitComet(url, filename, {}, { dir: resolvedDir })
       case "abdm":
         return this.launchABDM(url, filename, {}, { dir: resolvedDir })
       default:
@@ -249,7 +249,7 @@ export class DownloaderLauncher {
    */
   async launchIDM(link: string, filename: string, filesize: number, headers: Record<string, any> = {}, idmConfig: any = null): Promise<boolean> {
     const config = { ...this.getDefaultConfig("idm"), ...idmConfig }
-    const clientId = config.id
+    const clientId = config.id || "1"
     if (!clientId) throw new Error("IDM client id missing")
     const seq = ++this._idmSeq
     const time = Date.now()

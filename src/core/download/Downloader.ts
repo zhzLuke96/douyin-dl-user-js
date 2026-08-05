@@ -207,27 +207,27 @@ export class Downloader {
           console.warn("[dy-dl] prepare_filename failed, using input filename", e)
         }
         const launcher = new DownloaderLauncher({
-          idmList: [{ id: downloader_config.idm?.id ?? "1" }],
+          idmList: [{ id: downloader_config.idm?.id || "1" }],
           aria2List: [
             {
-              domain: downloader_config.aria2?.domain ?? "http://localhost",
-              port: downloader_config.aria2?.port ?? "6800",
-              path: downloader_config.aria2?.path ?? "/jsonrpc",
+              domain: downloader_config.aria2?.domain || "http://localhost",
+              port: downloader_config.aria2?.port || "6800",
+              path: downloader_config.aria2?.path || "/jsonrpc",
               token: downloader_config.aria2?.token ?? "",
               dir: "",
             },
           ],
           bitcometList: [
             {
-              domain: downloader_config.bc?.domain ?? "http://localhost",
-              port: downloader_config.bc?.port ?? "8080",
-              path: downloader_config.bc?.path ?? "/panel/task_add_httpftp_result",
+              domain: downloader_config.bc?.domain || "http://localhost",
+              port: downloader_config.bc?.port || "8080",
+              path: downloader_config.bc?.path || "/panel/task_add_httpftp_result",
               authName: downloader_config.bc?.authName ?? "",
               authPass: downloader_config.bc?.authPass ?? "",
               dir: "",
             },
           ],
-          abdmList: [{ domain: downloader_config.abdm?.domain ?? "http://localhost", port: downloader_config.abdm?.port ?? "15151", dir: "" }],
+          abdmList: [{ domain: downloader_config.abdm?.domain || "http://localhost", port: downloader_config.abdm?.port || "15151", dir: "" }],
         })
         const ok = await launcher.invoke_download(url, using_downloader, (downloader_config as any)[using_downloader]?.dir, {
           filename_input: resolvedFilename,

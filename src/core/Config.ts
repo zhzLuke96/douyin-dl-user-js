@@ -159,11 +159,22 @@ export class Config {
     return { features: this.features }
   }
 
+  private static deepMerge<T>(base: T, patch: unknown): T {
+    if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+      return (patch === undefined ? base : patch) as T
+    }
+    const result: any = Array.isArray(base) ? [...base] : { ...(base as object) }
+    for (const key of Object.keys(patch as Record<string, unknown>)) {
+      result[key] = this.deepMerge((base as any)?.[key], (patch as any)[key])
+    }
+    return result
+  }
+
   load() {
     const raw = localStorage.getItem(this._key)
     if (raw) {
       const data = JSON.parse(raw)
-      this.features = { ...this.features, ...data.features }
+      this.features = Config.deepMerge(Config.default_features(), data.features || {})
     }
   }
 
