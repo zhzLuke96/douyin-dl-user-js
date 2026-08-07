@@ -71,8 +71,8 @@ export class Downloader {
     // NOTE: 这是新文件头
     const imagex_fmt = headers.get("Imagex-Fmt") || ""
 
-    const isImage = !!imagex_fmt || content_type.startsWith("image/")
     const isWebP = imagex_fmt.includes("2webp") || url.includes(".webp") || content_type.includes("webp")
+    const isImage = !!imagex_fmt || content_type.startsWith("image/") || isWebP
     const isVideo = content_type.startsWith("video/")
 
     let fileExtGuess = content_type.split("/")[1]?.toLowerCase()
@@ -139,8 +139,9 @@ export class Downloader {
   /**
    * 下载后处理：转码、压缩图片
    */
-  async download_postprocess(blob: Blob, content_type: string): Promise<{ blob: Blob; output_type?: string }> {
-    if (content_type.startsWith("image/")) {
+  async download_postprocess(blob: Blob, content_type: string, options: { isImage?: boolean; isWebP?: boolean } = {}): Promise<{ blob: Blob; output_type?: string }> {
+    const looksLikeImage = content_type.startsWith("image/") || blob.type.startsWith("image/") || options.isImage || options.isWebP
+    if (looksLikeImage) {
       const processor = new ImageProcessor(Config.global.clone_features())
       return processor.process(blob)
     }
@@ -164,7 +165,10 @@ export class Downloader {
       filename = result.filename
       blob = result.blob
       // 压缩图片
-      const { blob: new_blob, output_type } = await this.download_postprocess(blob!, result.content_type ?? "")
+      const { blob: new_blob, output_type } = await this.download_postprocess(blob!, result.content_type ?? "", {
+        isImage: result.isImage,
+        isWebP: result.isWebP,
+      })
       blob = new_blob
       // 修改图片文件名后缀
       if (output_type === "image/png") filename = result.filename_base + ".png"
