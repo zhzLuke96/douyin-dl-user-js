@@ -139,7 +139,7 @@ export class Downloader {
   /**
    * 下载后处理：转码、压缩图片
    */
-  async download_postprocess(blob: Blob, content_type: string, options: { isImage?: boolean; isWebP?: boolean } = {}): Promise<{ blob: Blob; output_type?: string }> {
+  async download_postprocess(blob: Blob, content_type: string, options: { isImage?: boolean; isWebP?: boolean } = {}): Promise<{ blob: Blob; outputType?: string }> {
     const looksLikeImage = content_type.startsWith("image/") || blob.type.startsWith("image/") || options.isImage || options.isWebP
     if (looksLikeImage) {
       const processor = new ImageProcessor(Config.global.clone_features())
@@ -165,15 +165,15 @@ export class Downloader {
       filename = result.filename
       blob = result.blob
       // 压缩图片
-      const { blob: new_blob, output_type } = await this.download_postprocess(blob!, result.content_type ?? "", {
+      const { blob: new_blob, outputType } = await this.download_postprocess(blob!, result.content_type ?? "", {
         isImage: result.isImage,
         isWebP: result.isWebP,
       })
       blob = new_blob
       // 修改图片文件名后缀
-      if (output_type === "image/png") filename = result.filename_base + ".png"
-      else if (output_type === "image/jpeg") filename = result.filename_base + ".jpeg"
-      else if (output_type === "image/webp") filename = result.filename_base + ".webp"
+      if (outputType === "image/png") filename = result.filename_base + ".png"
+      else if (outputType === "image/jpeg") filename = result.filename_base + ".jpeg"
+      else if (outputType === "image/webp") filename = result.filename_base + ".webp"
     } catch (error) {
       console.error("[dy-dl]预下载异常", error)
       return { ok: false, error_msg: "预下载异常" }
