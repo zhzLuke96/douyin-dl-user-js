@@ -26,6 +26,14 @@ interface PrepareFilenameResult {
   filename_base: string
 }
 
+function parseMimeType(contentType: string): string {
+  return contentType.split(";")[0]?.trim().toLowerCase() ?? ""
+}
+
+function sanitizeFileExtension(ext: string): string {
+  return ext.match(/[a-z0-9]+/i)?.[0].toLowerCase() ?? ""
+}
+
 export class Downloader {
   /**
    * 将 WebP 图片转换为 PNG 格式
@@ -71,19 +79,25 @@ export class Downloader {
     // NOTE: 这是新文件头
     const imagex_fmt = headers.get("Imagex-Fmt") || ""
 
-    const isWebP = imagex_fmt.includes("2webp") || url.includes(".webp") || content_type.includes("webp")
-    const isImage = !!imagex_fmt || content_type.startsWith("image/") || isWebP
-    const isVideo = content_type.startsWith("video/")
+    const mimeType = parseMimeType(content_type)
+    const imagexFmt = imagex_fmt.toLowerCase()
 
-    let fileExtGuess = content_type.split("/")[1]?.toLowerCase()
+    const isWebP = imagexFmt.includes("webp") || url.toLowerCase().includes(".webp") || mimeType.includes("webp")
+    const isImage = !!imagex_fmt || mimeType.startsWith("image/") || isWebP
+    const isVideo = mimeType.startsWith("video/")
+
+    let fileExtGuess = mimeType.split("/")[1]?.toLowerCase()
+    if (isWebP) fileExtGuess = "webp"
+    else if (imagexFmt.includes("png")) fileExtGuess = "png"
+    else if (imagexFmt.includes("jpeg") || imagexFmt.includes("jpg")) fileExtGuess = "jpg"
     if (!fileExtGuess && isImage) fileExtGuess = "jpg"
     else if (!fileExtGuess) fileExtGuess = "bin"
 
-    let determinedFileExt = fileExtGuess
+    let determinedFileExt = sanitizeFileExtension(fileExtGuess)
     if (content_disposition) {
       const m = content_disposition.match(/filename="(.+)"$/i)
       if (m) {
-        const fe = m[1].split(".").pop()?.toLowerCase()
+        const fe = sanitizeFileExtension(m[1].split(".").pop() ?? "")
         if (fe) determinedFileExt = fe
       }
     }
@@ -140,7 +154,7 @@ export class Downloader {
    * 下载后处理：转码、压缩图片
    */
   async download_postprocess(blob: Blob, content_type: string, options: { isImage?: boolean; isWebP?: boolean } = {}): Promise<{ blob: Blob; outputType?: string }> {
-    const looksLikeImage = content_type.startsWith("image/") || blob.type.startsWith("image/") || options.isImage || options.isWebP
+    const looksLikeImage = parseMimeType(content_type).startsWith("image/") || blob.type.startsWith("image/") || options.isImage || options.isWebP
     if (looksLikeImage) {
       const processor = new ImageProcessor(Config.global.clone_features())
       return processor.process(blob)
