@@ -17,6 +17,8 @@ interface Features {
     bc: { dir: { video: string; image: string; other: string }; domain: string; port: string; path: string; authName: string; authPass: string }
     abdm: { dir: { video: string; image: string; other: string }; domain: string; port: string }
   }
+  enable_download_shortcut: boolean
+  download_shortcut: string
   enable_profile_downloader: boolean
 }
 
@@ -137,6 +139,18 @@ export class Config {
       },
     },
     /**
+     * 是否启用下载快捷键
+     *
+     * 默认开启
+     */
+    enable_download_shortcut: true,
+    /**
+     * 下载当前媒体的快捷键
+     *
+     * 支持 M、Ctrl+M、Alt+M、Shift+M、Ctrl+Shift+M 等组合
+     */
+    download_shortcut: "m",
+    /**
      * 是否开启作者页面下载器
      *
      * 默认关闭
@@ -174,7 +188,12 @@ export class Config {
     const raw = localStorage.getItem(this._key)
     if (raw) {
       const data = JSON.parse(raw)
-      this.features = Config.deepMerge(Config.default_features(), data.features || {})
+      const savedFeatures = data.features || {}
+      this.features = Config.deepMerge(Config.default_features(), savedFeatures)
+      // 兼容旧版本：之前用空字符串禁用快捷键
+      if (typeof savedFeatures.download_shortcut === "string" && !savedFeatures.download_shortcut.trim() && typeof savedFeatures.enable_download_shortcut !== "boolean") {
+        this.features.enable_download_shortcut = false
+      }
     }
   }
 

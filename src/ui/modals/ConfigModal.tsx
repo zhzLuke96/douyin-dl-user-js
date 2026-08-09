@@ -309,6 +309,27 @@ const SettingsTab = ({ cfg, onChange, onResetDefaults }: { cfg: any; onChange: (
         <div className={c.hintText}>注意：实际下载时根据可用地址匹配，并非所有视频都提供所有编码。</div>
       </fieldset>
       <fieldset className={c.fieldset}>
+        <legend className={c.legend}>快捷键</legend>
+        <div className={c.row}>
+          <span className={c.label}>启用快捷键</span>
+          <label style={{ display: "flex", alignItems: "center", gap: theme.spacing.sm, cursor: "pointer" }}>
+            <input type="checkbox" checked={cfg.enable_download_shortcut} onChange={(e) => update(() => (cfg.enable_download_shortcut = (e.target as HTMLInputElement).checked))} />
+            <span>启用下载快捷键</span>
+          </label>
+        </div>
+        <div className={c.row}>
+          <span className={c.label}>下载快捷键</span>
+          <input
+            className={c.input}
+            value={cfg.download_shortcut}
+            placeholder="M / Ctrl+Shift+M"
+            disabled={!cfg.enable_download_shortcut}
+            onChange={(e) => update(() => (cfg.download_shortcut = (e.target as HTMLInputElement).value))}
+          />
+        </div>
+        <div className={c.hintText}>支持单键或组合键，例如 M、Ctrl+M、Alt+M、Shift+M、Ctrl+Shift+M。输入框聚焦时快捷键不触发。</div>
+      </fieldset>
+      <fieldset className={c.fieldset}>
         <legend className={c.legend}>重置配置</legend>
         <div className={c.hintText}>重置会将当前表单所有配置恢复为默认值，保存后覆盖现有全部配置。</div>
         <button className={c.btnDanger} onClick={onResetDefaults}>

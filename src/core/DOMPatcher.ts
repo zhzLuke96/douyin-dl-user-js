@@ -53,9 +53,25 @@ export class DOMPatcher {
     return null
   }
 
-  /** 配置变更时同步卡片选择器 */
+  /** 配置变更时同步卡片选择器和快捷键提示 */
   private _on_config_change() {
+    this._sync_shortcut_labels()
     this._sync_feed_cards()
+  }
+
+  /** 同步播放器菜单中的快捷键提示 */
+  private _sync_shortcut_labels() {
+    const label = this._shortcut_label()
+    document.body.querySelectorAll(".dy-dl-video-btn .shortcutKey").forEach((el) => {
+      el.textContent = label
+    })
+  }
+
+  /** 当前下载快捷键展示文本 */
+  private _shortcut_label(): string {
+    const features = Config.global.features
+    if (!features.enable_download_shortcut) return "已禁用"
+    return features.download_shortcut?.trim() || "未设置"
   }
 
   /** 同步所有 feed 卡片的选择器状态 */
@@ -151,7 +167,19 @@ export class DOMPatcher {
     const btn = new TooltipsButton(
       "插件",
       [
-        { html: `<div class="xgTips item"><span>快捷键：</span><span class="shortcutKey">M</span>` },
+        {
+          render: () => {
+            const item = document.createElement("div")
+            item.className = "xgTips item"
+            const label = document.createElement("span")
+            label.textContent = "快捷键："
+            const shortcut = document.createElement("span")
+            shortcut.className = "shortcutKey"
+            shortcut.textContent = this._shortcut_label()
+            item.append(label, shortcut)
+            return item
+          },
+        },
         { label: "需求/反馈", callback: () => window.open("https://github.com/zhzLuke96/douyin-dl-user-js/issues", "_blank", "noopener,noreferrer") },
         { label: "设置", callback: () => this.mediaHandler.open_config_modal() },
         { label: "媒体详情", callback: () => this.mediaHandler.show_media_details() },
