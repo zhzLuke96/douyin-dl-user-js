@@ -50,7 +50,7 @@ export class DownloaderLauncher {
     url: string,
     dl_name: "idm" | "aria2" | "bc" | "abdm" = "abdm",
     dir_config?: { video?: string; image?: string; other?: string } | null,
-    options: { filename_input?: string; media?: any } = {},
+    options: { filename_input?: string; media?: any; mediaType?: "video" | "image" } = {},
   ): Promise<boolean> {
     const input_filename = options.filename_input || (options.media ? "media_" + Date.now() : "download")
     const media = options.media
@@ -64,8 +64,8 @@ export class DownloaderLauncher {
     const nickname = authorInfo.nickname || "unknown"
     const userDir = (filename: string) => filename.replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, "_")
     const safeUserDir = userDir(`${userId}_${nickname}`)
-    const mediaType = isVideo ? "video" : isImage ? "image" : "other"
-    const defaultDir = isVideo ? `./douyin/${safeUserDir}/videos` : isImage ? `./douyin/${safeUserDir}/images` : `./douyin/${safeUserDir}/others`
+    const mediaType = options.mediaType || (isVideo ? "video" : isImage ? "image" : "other")
+    const defaultDir = mediaType === "video" ? `./douyin/${safeUserDir}/videos` : mediaType === "image" ? `./douyin/${safeUserDir}/images` : `./douyin/${safeUserDir}/others`
     const dirContext = {
       media,
       filename,

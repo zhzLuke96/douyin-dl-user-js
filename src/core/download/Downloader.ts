@@ -67,7 +67,7 @@ export class Downloader {
   /**
    * 根据请求头猜测完整文件名
    */
-  async prepare_filename(dl_url: string, filename_input = ""): Promise<PrepareFilenameResult> {
+  async prepare_filename(dl_url: string, filename_input = "", options: { mediaType?: "video" | "image" } = {}): Promise<PrepareFilenameResult> {
     let url = dl_url
     if (url.startsWith("//")) {
       url = window.location.protocol + url
@@ -83,8 +83,8 @@ export class Downloader {
     const imagexFmt = imagex_fmt.toLowerCase()
 
     const isWebP = imagexFmt.includes("webp") || url.toLowerCase().includes(".webp") || mimeType.includes("webp")
-    const isImage = !!imagex_fmt || mimeType.startsWith("image/") || isWebP
-    const isVideo = mimeType.startsWith("video/")
+    const isImage = options.mediaType === "image" || (options.mediaType !== "video" && (!!imagex_fmt || mimeType.startsWith("image/") || isWebP))
+    const isVideo = options.mediaType === "video" || mimeType.startsWith("video/")
 
     let fileExtGuess = mimeType.split("/")[1]?.toLowerCase()
     if (isWebP) fileExtGuess = "webp"
@@ -94,7 +94,9 @@ export class Downloader {
     else if (!fileExtGuess) fileExtGuess = "bin"
 
     let determinedFileExt = sanitizeFileExtension(fileExtGuess)
-    if (content_disposition) {
+    if (options.mediaType === "video") {
+      determinedFileExt = "mp4"
+    } else if (content_disposition) {
       const m = content_disposition.match(/filename="(.+)"$/i)
       if (m) {
         const fe = sanitizeFileExtension(m[1].split(".").pop() ?? "")
@@ -117,8 +119,8 @@ export class Downloader {
    * PS: 这一步其实没有下载，而是通过浏览器的缓存读取了
    * PSS: 并且如果浏览器没有缓存，似乎会报错，因为server那边会校验cookie，我们没带上
    */
-  async prepare_download_file(dl_url: string, filename_input = ""): Promise<DownloadResult> {
-    const meta = await this.prepare_filename(dl_url, filename_input)
+  async prepare_download_file(dl_url: string, filename_input = "", options: { mediaType?: "video" | "image" } = {}): Promise<DownloadResult> {
+    const meta = await this.prepare_filename(dl_url, filename_input, options)
     const response = await fetch(dl_url)
     if (!response.ok) {
       return { ok: false, error_msg: "Failed to fetch the file: " + response.status }
@@ -170,11 +172,11 @@ export class Downloader {
    * 2. 如果是 webp 图片，尝试转为 png 图片
    * 3. 下载 blob
    */
-  async download_using_browser(url: string, filename_input: string): Promise<{ ok: boolean; error_msg: string }> {
+  async download_using_browser(url: string, filename_input: string, options: { mediaType?: "video" | "image" } = {}): Promise<{ ok: boolean; error_msg: string }> {
     let blob: Blob | undefined
     let filename: string | undefined
     try {
-      const result = await this.prepare_download_file(url, filename_input)
+      const result = await this.prepare_download_file(url, filename_input, options)
       if (!result.ok) return { ok: false, error_msg: result.error_msg || "预下载失败" }
       filename = result.filename
       blob = result.blob
@@ -208,18 +210,18 @@ export class Downloader {
   /**
    * 根据配置使用不同的下载器
    */
-  async download_one_url(url: string, filename_input: string, options: { media?: any } = {}): Promise<{ ok: boolean; error_msg: string }> {
+  async download_one_url(url: string, filename_input: string, options: { media?: any; mediaType?: "video" | "image" } = {}): Promise<{ ok: boolean; error_msg: string }> {
     const { using_downloader, downloader_config } = Config.global.features
     switch (using_downloader) {
       case "browser":
-        return this.download_using_browser(url, filename_input)
+        return this.download_using_browser(url, filename_input, options)
       case "idm":
       case "aria2":
       case "bc":
       case "abdm": {
         let resolvedFilename = filename_input
         try {
-          const meta = await this.prepare_filename(url, filename_input)
+          const meta = await this.prepare_filename(url, filename_input, options)
           resolvedFilename = meta.filename
         } catch (e) {
           console.warn("[dy-dl] prepare_filename failed, using input filename", e)
@@ -250,6 +252,7 @@ export class Downloader {
         const ok = await launcher.invoke_download(url, using_downloader, (downloader_config as any)[using_downloader]?.dir, {
           filename_input: resolvedFilename,
           media: options.media,
+          mediaType: options.mediaType,
         })
         return { ok: !!ok, error_msg: "" }
       }
@@ -261,7 +264,12 @@ export class Downloader {
   /**
    * 下载文件，根据所有 url 逐一尝试下载
    */
-  async download_file(source: string, filename_input = "", fallback_src: string[] = [], options: { silent?: boolean; media?: any } = {}): Promise<boolean> {
+  async download_file(
+    source: string,
+    filename_input = "",
+    fallback_src: string[] = [],
+    options: { silent?: boolean; media?: any; mediaType?: "video" | "image" } = {},
+  ): Promise<boolean> {
     let url_sources = [source, ...fallback_src].filter((x) => typeof x === "string" && x.length > 0)
     url_sources = Array.from(new Set(url_sources))
     let error_msg = ""

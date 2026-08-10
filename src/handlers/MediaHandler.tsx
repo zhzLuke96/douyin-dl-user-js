@@ -267,7 +267,7 @@ export class MediaHandler {
         if (item.video) {
           const urls = this._get_video_urls(item.video)
           if (urls.length > 0) {
-            const ok = await this.downloader.download_file(urls[0], fn, urls, { silent: !alertOnFail, media })
+            const ok = await this.downloader.download_file(urls[0], fn, urls, { silent: !alertOnFail, media, mediaType: "video" })
             if (ok) downloadedCount++
           }
           continue
@@ -276,7 +276,7 @@ export class MediaHandler {
         // NOTE: .urlList 里面是 q75的webp 图片， downloadUrlList 里面是完整原版大图但是带水印...
         const img_urls = item.urlList?.filter(Boolean) || item.downloadUrlList?.filter(Boolean)
         if (img_urls?.length > 0) {
-          const ok = await this.downloader.download_file(img_urls[0], fn, img_urls, { silent: !alertOnFail, media })
+          const ok = await this.downloader.download_file(img_urls[0], fn, img_urls, { silent: !alertOnFail, media, mediaType: "image" })
           if (ok) downloadedCount++
         }
       }
@@ -293,7 +293,7 @@ export class MediaHandler {
     toastUpdate("正在下载...")
     const video_urls = this._get_video_urls(video)
     if (video_urls.length > 0) {
-      const ok = await this.downloader.download_file(video_urls[0], filename_base, video_urls, { silent: !alertOnFail, media })
+      const ok = await this.downloader.download_file(video_urls[0], filename_base, video_urls, { silent: !alertOnFail, media, mediaType: "video" })
       if (ok && addHistory) DownloadHistory.add(media)
       if (ok) {
         toastUpdate("下载完成")
@@ -312,7 +312,7 @@ export class MediaHandler {
     }
     const coverUrl = getBestCoverUrl(media)
     if (!coverUrl) return { ok: false, reason: "no_cover" }
-    const ok = await this.downloader.download_file(coverUrl, "thumb_" + this._build_filename(media), [], { silent: !alertOnFail, media })
+    const ok = await this.downloader.download_file(coverUrl, "thumb_" + this._build_filename(media), [], { silent: !alertOnFail, media, mediaType: "image" })
     if (!ok) return { ok: false, reason: "cover_download_failed" }
     return { ok: true }
   }
@@ -339,7 +339,7 @@ export class MediaHandler {
     }
 
     // 4. 执行下载
-    this.downloader.download_file(bestThumb, "thumb_" + this._build_filename(this.current_media), [], { media: this.current_media })
+    this.downloader.download_file(bestThumb, "thumb_" + this._build_filename(this.current_media), [], { media: this.current_media, mediaType: "image" })
   }
 
   // 显示媒体详情
