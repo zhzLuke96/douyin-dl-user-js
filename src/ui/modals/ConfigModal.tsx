@@ -1,5 +1,5 @@
 // 配置弹窗组件
-import { useState, useEffect, useMemo } from "preact/hooks"
+import { useState, useEffect, useMemo, useRef } from "preact/hooks"
 import { createCSS } from "../../utils/css-in-js"
 import { theme } from "../../utils/theme"
 import { Modal } from "./Modal"
@@ -637,13 +637,20 @@ const tabs = [
 export const ConfigModalApp = ({ config, modal }: { config: Config; modal?: Modal }) => {
   const [tab, setTab] = useState("settings")
   const [cfg, setCfg] = useState(() => config.clone_features())
-  const [saveVersion, setSaveVersion] = useState(0)
-  const originalRef = useMemo(() => JSON.stringify(config.clone_features()), [config, saveVersion])
-  useEffect(() => {
-    const cloned = config.clone_features()
-    setCfg(cloned)
-  }, [config])
+  const [original, setOriginal] = useState(() => config.clone_features())
+  const originalRef = useMemo(() => JSON.stringify(original), [original])
   const dirty = useMemo(() => JSON.stringify(cfg) !== originalRef, [cfg, originalRef])
+  const dirtyRef = useRef(false)
+  dirtyRef.current = dirty
+  useEffect(() => {
+    const refresh = () => {
+      const latest = config.clone_features()
+      if (dirtyRef.current) return
+      setCfg(latest)
+      setOriginal(latest)
+    }
+    return config.events.on("config_change", refresh)
+  }, [config])
 
   useEffect(() => {
     if (modal) {
@@ -652,13 +659,29 @@ export const ConfigModalApp = ({ config, modal }: { config: Config; modal?: Moda
   }, [dirty, modal])
 
   const onSave = () => {
-    config.features = cfg
+    const changedPaths = Config.diff_paths(original, cfg)
+    const latest = config.clone_features()
+    if (changedPaths.length === 0) {
+      setOriginal(latest)
+      setCfg(latest)
+      alert("配置已保存")
+      return
+    }
+    const conflictingPaths = changedPaths.filter((path) => Config.diff_paths(original, latest).includes(path))
+    if (conflictingPaths.length > 0 && !confirm(`其他标签页已修改：${conflictingPaths.join("、")}。保存会覆盖这些字段，确定继续？`)) return
+    config.features = Config.apply_paths(latest, cfg, changedPaths)
     config.save()
-    setSaveVersion((v) => v + 1)
+    const saved = config.clone_features()
+    setOriginal(saved)
+    setCfg(saved)
     alert("配置已保存")
   }
   const onEdit = () => setCfg({ ...cfg })
-  const onCancel = () => setCfg(config.clone_features())
+  const onCancel = () => {
+    const latest = config.clone_features()
+    setCfg(latest)
+    setOriginal(latest)
+  }
   const onResetDefaults = () => {
     if (!confirm("确定重置为默认配置？此操作会覆盖当前所有配置，包括下载器、图片、文件命名等。")) return
     setCfg(Config.default_features())

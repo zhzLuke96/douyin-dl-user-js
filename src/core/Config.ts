@@ -1,5 +1,25 @@
 import { Emitter } from "./Emitter"
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+const getPathValue = (obj: any, path: string): unknown => {
+  return path.split(".").reduce<any>((acc, key) => (acc == null ? undefined : acc[key]), obj)
+}
+
+const deepEqual = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => deepEqual(value, b[index]))
+  }
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])]
+    return keys.every((key) => deepEqual(a[key], b[key]))
+  }
+  return false
+}
+
 interface Features {
   convert_webp_to_png: boolean
   download_video_mode: "default" | "max" | "min" | "1080P" | "720P" | "360P" | "2K" | "4K" | "max_file" | "min_file"
@@ -159,6 +179,16 @@ export class Config {
   }
 
   private _key = "__douyin-dl-user-js__"
+  private _base: Features = this.clone_features()
+  private _storage_handler = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== this._key) return
+    try {
+      this.load()
+      this.events.emit("config_change")
+    } catch (error) {
+      console.error(error)
+    }
+  }
 
   constructor(load = true) {
     if (!load) return
@@ -166,6 +196,9 @@ export class Config {
       this.load()
     } catch (error) {
       console.error(error)
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("storage", this._storage_handler)
     }
   }
 
@@ -184,21 +217,63 @@ export class Config {
     return result
   }
 
-  load() {
-    const raw = localStorage.getItem(this._key)
-    if (raw) {
-      const data = JSON.parse(raw)
-      const savedFeatures = data.features || {}
-      this.features = Config.deepMerge(Config.default_features(), savedFeatures)
-      // 兼容旧版本：之前用空字符串禁用快捷键
-      if (typeof savedFeatures.download_shortcut === "string" && !savedFeatures.download_shortcut.trim() && typeof savedFeatures.enable_download_shortcut !== "boolean") {
-        this.features.enable_download_shortcut = false
+  static diff_paths(base: any, next: any, prefix = ""): string[] {
+    const result: string[] = []
+    const baseKeys = isPlainObject(base) ? Object.keys(base) : []
+    const nextKeys = isPlainObject(next) ? Object.keys(next) : []
+    const keys = [...new Set([...baseKeys, ...nextKeys])]
+    for (const key of keys) {
+      const path = prefix ? `${prefix}.${key}` : key
+      const oldValue = isPlainObject(base) ? base[key] : undefined
+      const newValue = isPlainObject(next) ? next[key] : undefined
+      if (deepEqual(oldValue, newValue)) continue
+      if (isPlainObject(oldValue) && isPlainObject(newValue)) {
+        result.push(...this.diff_paths(oldValue, newValue, path))
+      } else {
+        result.push(path)
       }
     }
+    return result
+  }
+
+  static apply_paths(target: any, source: any, paths: string[]): any {
+    const result = JSON.parse(JSON.stringify(target))
+    for (const path of paths) {
+      const parts = path.split(".")
+      let current = result
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!isPlainObject(current[parts[i]])) current[parts[i]] = {}
+        current = current[parts[i]]
+      }
+      current[parts[parts.length - 1]] = getPathValue(source, path)
+    }
+    return result
+  }
+
+  private read_stored_features(): Features {
+    const raw = localStorage.getItem(this._key)
+    if (!raw) return Config.default_features()
+    const data = JSON.parse(raw)
+    const savedFeatures = data.features || {}
+    const features = Config.deepMerge(Config.default_features(), savedFeatures)
+    // 兼容旧版本：之前用空字符串禁用快捷键
+    if (typeof savedFeatures.download_shortcut === "string" && !savedFeatures.download_shortcut.trim() && typeof savedFeatures.enable_download_shortcut !== "boolean") {
+      features.enable_download_shortcut = false
+    }
+    return features
+  }
+
+  load() {
+    this.features = this.read_stored_features()
+    this._base = this.clone_features()
   }
 
   save() {
+    const latest = this.read_stored_features()
+    const patch = Config.diff_paths(this._base, this.features)
+    this.features = Config.apply_paths(latest, this.features, patch)
     localStorage.setItem(this._key, JSON.stringify(this.toJSON()))
+    this._base = this.clone_features()
     this.events.emit("config_change")
   }
 
