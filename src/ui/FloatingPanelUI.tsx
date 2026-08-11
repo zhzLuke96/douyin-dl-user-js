@@ -88,6 +88,24 @@ const s = {
 import type { ProfileDownloadManager } from "../handlers/profile/ProfileDownloadManager"
 import type { ProfileDataService } from "../handlers/profile/ProfileDataService"
 
+const PANEL_OPEN_KEY = "__douyin-dl-profile-panel-open__"
+
+const readPanelOpen = (): boolean => {
+  try {
+    const saved = localStorage.getItem(PANEL_OPEN_KEY)
+    if (saved !== null) return saved === "1"
+  } catch {}
+  return Config.global.features.enable_profile_downloader
+}
+
+const writePanelOpen = (open: boolean) => {
+  try {
+    localStorage.setItem(PANEL_OPEN_KEY, open ? "1" : "0")
+  } catch {}
+  Config.global.features.enable_profile_downloader = open
+  Config.global.save()
+}
+
 // 浮动操作面板主组件
 export const FloatingPanelApp = ({
   dataService,
@@ -98,7 +116,7 @@ export const FloatingPanelApp = ({
   downloadManager: ProfileDownloadManager
   onOpenSettings?: () => void
 }) => {
-  const [exp, setExp] = useState(() => Config.global.features.enable_profile_downloader)
+  const [exp, setExp] = useState(readPanelOpen)
   const [snap, setSnap] = useState(() => downloadManager.getSnapshot())
   const [showJob, setShowJob] = useState(false)
   useEffect(() => {
@@ -124,8 +142,7 @@ export const FloatingPanelApp = ({
         onClick={() => {
           const next = !exp
           setExp(next)
-          Config.global.features.enable_profile_downloader = next
-          Config.global.save()
+          writePanelOpen(next)
         }}
       >
         {exp ? "❌" : "插件"}
