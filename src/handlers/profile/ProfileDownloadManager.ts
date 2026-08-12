@@ -81,13 +81,33 @@ export class ProfileDownloadManager extends Emitter<Events> {
       profile = this.dataService.getProfileContext()
     }
     if (!profile) {
-      this.jobState = null
+      if (!this.jobRunning) {
+        this.jobState = null
+        this._clearSessionState()
+      }
       return null
     }
     if (!this.jobState || (!this.jobRunning && this.jobState.profileKey !== profile.profileKey)) {
-      this.jobState = ProfileDownloadState.load(profile.profileKey, profile)
+      if (!this.jobRunning) {
+        this._clearSessionState()
+        this.jobState = ProfileDownloadState.load(profile.profileKey, profile)
+      }
     }
     return this.jobState
+  }
+
+  /** 页面跳转后同步当前会话状态 */
+  syncPageState() {
+    this._ensureJobState()
+    this.emit("stateChanged", this)
+  }
+
+  private _clearSessionState() {
+    this.jobLog = []
+    this.selectedIds.clear()
+    this._itemStatus = {}
+    this.currentDownloadType = "content"
+    this._concurrency = 1
   }
 
   private _saveJobState() {

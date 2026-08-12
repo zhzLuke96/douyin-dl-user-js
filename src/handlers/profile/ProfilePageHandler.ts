@@ -13,6 +13,16 @@ export class ProfilePageHandler {
     this.mediaHandler = mediaHandler
     this.dataService = new ProfileDataService()
     this.downloadManager = new ProfileDownloadManager({ mediaHandler, dataService: this.dataService })
+    this.watchPageChanges()
+  }
+
+  private watchPageChanges() {
+    let lastHref = location.href
+    setInterval(() => {
+      if (location.href === lastHref) return
+      lastHref = location.href
+      this.downloadManager.syncPageState()
+    }, 500)
   }
 
   mount_ui() {

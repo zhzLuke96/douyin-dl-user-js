@@ -53,5 +53,6 @@ export function normalizeFilename(name: string, options: { replacementChar?: str
  * 判断是否为作者主页路径
  */
 export function isProfilePagePath(pathname = location.pathname): boolean {
-  return pathname.startsWith("/user/")
+  const segments = pathname.split("/").filter(Boolean)
+  return segments.length === 2 && segments[0] === "user"
 }
