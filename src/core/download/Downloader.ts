@@ -60,8 +60,13 @@ export class Downloader {
    * 获取请求头
    */
   async get_headers(url: string): Promise<Headers> {
-    const response = await fetch(url, { method: "HEAD" })
-    return response.headers
+    try {
+      const response = await fetch(url, { method: "HEAD" })
+      if (!response.ok) return new Headers()
+      return response.headers
+    } catch {
+      return new Headers()
+    }
   }
 
   /**
@@ -72,7 +77,7 @@ export class Downloader {
     if (url.startsWith("//")) {
       url = window.location.protocol + url
     }
-    const headers = await this.get_headers(url)
+    const headers = options.mediaType === "video" ? new Headers() : await this.get_headers(url)
     const content_disposition = headers.get("content-disposition") || ""
     const content_type = headers.get("content-type") || ""
     const content_length = headers.get("content-length") || ""
