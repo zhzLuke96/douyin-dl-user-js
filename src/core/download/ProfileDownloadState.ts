@@ -11,9 +11,9 @@ export interface ProfileState {
   completedAt: number
   knownIds: string[]
   downloadedIds: string[]
-  failedItems: Record<string, { count?: number; reason?: string; updatedAt?: number; desc?: string }>
+  failedItems: Record<string, { count?: number; reason?: string; message?: string; updatedAt?: number; desc?: string }>
   coverDownloadedIds: string[]
-  coverFailedItems: Record<string, { count?: number; reason?: string; updatedAt?: number; desc?: string }>
+  coverFailedItems: Record<string, { count?: number; reason?: string; message?: string; updatedAt?: number; desc?: string }>
 }
 
 export class ProfileDownloadState {

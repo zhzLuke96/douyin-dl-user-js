@@ -259,6 +259,7 @@ export class MediaHandler {
       // 下载图集
       // TODO 要是能支持 zip 打包会更好一点
       let downloadedCount = 0
+      let lastError = ""
       for (let idx = 0; idx < images.length; idx++) {
         toastUpdate("下载图集 (" + (idx + 1) + "/" + total + ")")
         const item = images[idx]
@@ -267,8 +268,11 @@ export class MediaHandler {
         if (item.video) {
           const urls = this._get_video_urls(item.video)
           if (urls.length > 0) {
-            const ok = await this.downloader.download_file(urls[0], fn, urls, { silent: !alertOnFail, media, mediaType: "video" })
-            if (ok) downloadedCount++
+            const dl = await this.downloader.download_file_with_error(urls[0], fn, urls, { silent: !alertOnFail, media, mediaType: "video" })
+            if (dl.ok) downloadedCount++
+            else lastError = lastError || dl.error_msg
+          } else {
+            lastError = lastError || "未找到视频地址"
           }
           continue
         }
@@ -276,14 +280,17 @@ export class MediaHandler {
         // NOTE: .urlList 里面是 q75的webp 图片， downloadUrlList 里面是完整原版大图但是带水印...
         const img_urls = item.urlList?.filter(Boolean) || item.downloadUrlList?.filter(Boolean)
         if (img_urls?.length > 0) {
-          const ok = await this.downloader.download_file(img_urls[0], fn, img_urls, { silent: !alertOnFail, media, mediaType: "image" })
-          if (ok) downloadedCount++
+          const dl = await this.downloader.download_file_with_error(img_urls[0], fn, img_urls, { silent: !alertOnFail, media, mediaType: "image" })
+          if (dl.ok) downloadedCount++
+          else lastError = lastError || dl.error_msg
+        } else {
+          lastError = lastError || "未找到图片地址"
         }
       }
       toastUpdate("图集下载完成")
       if (downloadedCount === 0 && images.length > 0) {
         if (alertOnFail) alert("[dy-dl]图集下载失败")
-        return { ok: false, reason: "no_valid_media" }
+        return { ok: false, reason: "no_valid_media", message: lastError || "图集下载失败" }
       }
       if (downloadedCount && addHistory) DownloadHistory.add(media)
       return { ok: downloadedCount > 0 }
@@ -292,16 +299,20 @@ export class MediaHandler {
     // 单视频或单图片（老版本可能直接在video字段放图片信息，但新版通常是images）
     toastUpdate("正在下载...")
     const video_urls = this._get_video_urls(video)
+    let lastError: string
     if (video_urls.length > 0) {
-      const ok = await this.downloader.download_file(video_urls[0], filename_base, video_urls, { silent: !alertOnFail, media, mediaType: "video" })
-      if (ok && addHistory) DownloadHistory.add(media)
-      if (ok) {
+      const dl = await this.downloader.download_file_with_error(video_urls[0], filename_base, video_urls, { silent: !alertOnFail, media, mediaType: "video" })
+      if (dl.ok && addHistory) DownloadHistory.add(media)
+      if (dl.ok) {
         toastUpdate("下载完成")
         return { ok: true }
       }
+      lastError = dl.error_msg
+    } else {
+      lastError = "未找到视频地址"
     }
     if (alertOnFail) alert("[dy-dl]无法下载当前媒体")
-    return { ok: false, reason: "no_valid_media" }
+    return { ok: false, reason: "no_valid_media", message: lastError || "无法下载当前媒体" }
   }
 
   async _download_cover_logic(media: any, options: any = {}): Promise<any> {
@@ -311,9 +322,9 @@ export class MediaHandler {
       return { ok: false, reason: "missing_media" }
     }
     const coverUrl = getBestCoverUrl(media)
-    if (!coverUrl) return { ok: false, reason: "no_cover" }
-    const ok = await this.downloader.download_file(coverUrl, "thumb_" + this._build_filename(media), [], { silent: !alertOnFail, media, mediaType: "image" })
-    if (!ok) return { ok: false, reason: "cover_download_failed" }
+    if (!coverUrl) return { ok: false, reason: "no_cover", message: "未找到封面地址" }
+    const dl = await this.downloader.download_file_with_error(coverUrl, "thumb_" + this._build_filename(media), [], { silent: !alertOnFail, media, mediaType: "image" })
+    if (!dl.ok) return { ok: false, reason: "cover_download_failed", message: dl.error_msg || "封面下载失败" }
     return { ok: true }
   }
 

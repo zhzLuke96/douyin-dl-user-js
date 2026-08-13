@@ -269,24 +269,33 @@ export class Downloader {
   /**
    * 下载文件，根据所有 url 逐一尝试下载
    */
-  async download_file(
+  async download_file_with_error(
     source: string,
     filename_input = "",
     fallback_src: string[] = [],
     options: { silent?: boolean; media?: any; mediaType?: "video" | "image" } = {},
-  ): Promise<boolean> {
+  ): Promise<{ ok: boolean; error_msg: string }> {
     let url_sources = [source, ...fallback_src].filter((x) => typeof x === "string" && x.length > 0)
     url_sources = Array.from(new Set(url_sources))
     let error_msg = ""
     for (const url of url_sources) {
       const r = await this.download_one_url(url, filename_input, options)
       error_msg = error_msg || r.error_msg
-      if (r.ok) return true
+      if (r.ok) return { ok: true, error_msg: "" }
     }
     // 所有尝试都失败时弹出提示
     if (!options.silent) {
       alert(error_msg && url_sources.length === 1 ? error_msg : "[dy-dl]所有尝试下载都失败，请刷新重试")
     }
-    return false
+    return { ok: false, error_msg }
+  }
+
+  async download_file(
+    source: string,
+    filename_input = "",
+    fallback_src: string[] = [],
+    options: { silent?: boolean; media?: any; mediaType?: "video" | "image" } = {},
+  ): Promise<boolean> {
+    return (await this.download_file_with_error(source, filename_input, fallback_src, options)).ok
   }
 }

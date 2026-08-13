@@ -42,6 +42,7 @@ export interface FeedCardStatus {
 interface FailedItem {
   count: number
   reason: string
+  message: string
   updatedAt: number
   desc: string
 }
@@ -163,16 +164,28 @@ export class ProfileDownloadManager extends Emitter<Events> {
     }
   }
 
-  markFailed(media: any, reason = "unknown", downloadType: DownloadType = "content") {
+  markFailed(media: any, reason = "unknown", downloadType: DownloadType = "content", message = reason) {
     if (!this.jobState || !media?.awemeId) return
     if (downloadType === "cover") {
       const prev: Partial<FailedItem> = this.jobState.coverFailedItems?.[media.awemeId] || {}
       this.jobState.coverFailedItems = this.jobState.coverFailedItems || {}
-      this.jobState.coverFailedItems[media.awemeId] = { count: Number(prev.count || 0) + 1, reason, updatedAt: Date.now(), desc: media.desc || prev.desc || "" }
+      this.jobState.coverFailedItems[media.awemeId] = {
+        count: Number(prev.count || 0) + 1,
+        reason,
+        message: message || reason,
+        updatedAt: Date.now(),
+        desc: media.desc || prev.desc || "",
+      }
     } else {
       const prev: Partial<FailedItem> = this.jobState.failedItems?.[media.awemeId] || {}
       this.jobState.failedItems = this.jobState.failedItems || {}
-      this.jobState.failedItems[media.awemeId] = { count: Number(prev.count || 0) + 1, reason, updatedAt: Date.now(), desc: media.desc || prev.desc || "" }
+      this.jobState.failedItems[media.awemeId] = {
+        count: Number(prev.count || 0) + 1,
+        reason,
+        message: message || reason,
+        updatedAt: Date.now(),
+        desc: media.desc || prev.desc || "",
+      }
     }
   }
 
@@ -422,7 +435,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
       console.warn("[dy-dl] 缓存中未找到作品", awemeId)
       this._itemStatus[awemeId] = "failed"
       this._push_log("failed", "缓存中未找到作品，已标记失败", fakeMedia)
-      this.markFailed(fakeMedia, "cache_miss", downloadType)
+      this.markFailed(fakeMedia, "cache_miss", downloadType, "缓存中未找到作品")
       this._saveJobState()
       this.emit("stateChanged", this)
       this.emit("countsUpdated", this.getCounts())
@@ -443,14 +456,15 @@ export class ProfileDownloadManager extends Emitter<Events> {
             addHistory: true,
           })
     const reason = result?.reason || (downloadType === "cover" ? "cover_download_failed" : "download_failed")
+    const errorMessage = result?.message || result?.error_msg || reason
     if (result?.ok) {
       this._itemStatus[awemeId] = "success"
       this.markDownloaded(media, downloadType)
       this._push_log("success", "下载成功", media)
     } else {
       this._itemStatus[awemeId] = "failed"
-      this.markFailed(media, reason, downloadType)
-      this._push_log("failed", "下载失败：" + reason, media)
+      this.markFailed(media, reason, downloadType, errorMessage)
+      this._push_log("failed", "下载失败：" + errorMessage, media)
     }
     this._saveJobState()
     this.emit("stateChanged", this)
@@ -471,10 +485,11 @@ export class ProfileDownloadManager extends Emitter<Events> {
         } catch (error) {
           const media = this.dataService.feedMediaCache.get(awemeId)
           const fallbackMedia = { awemeId, desc: "下载异常" }
+          const errorMessage = error instanceof Error ? error.message : String(error)
           console.error("[dy-dl] 批量下载任务异常", error)
           this._itemStatus[awemeId] = "failed"
-          this._push_log("failed", "下载异常：" + (error instanceof Error ? error.message : String(error)), media || fallbackMedia)
-          this.markFailed(media || fallbackMedia, "unexpected_error", downloadType)
+          this._push_log("failed", "下载异常：" + errorMessage, media || fallbackMedia)
+          this.markFailed(media || fallbackMedia, "unexpected_error", downloadType, errorMessage)
           this._saveJobState()
           this.emit("stateChanged", this)
           this.emit("countsUpdated", this.getCounts())
