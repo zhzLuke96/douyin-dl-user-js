@@ -29,6 +29,16 @@ export interface JobLogEntry {
   message: string
 }
 
+export interface FeedCardStatus {
+  selected: boolean
+  contentDownloaded: boolean
+  coverDownloaded: boolean
+  failed: boolean
+  coverFailed: boolean
+  running: boolean
+  runningType: DownloadType | null
+}
+
 interface FailedItem {
   count: number
   reason: string
@@ -189,6 +199,19 @@ export class ProfileDownloadManager extends Emitter<Events> {
 
   _isFeedSelected(awemeId: string): boolean {
     return this.selectedIds.has(awemeId)
+  }
+
+  getFeedCardStatus(awemeId: string): FeedCardStatus {
+    const running = this._itemStatus[awemeId] === "running"
+    return {
+      selected: this.selectedIds.has(awemeId),
+      contentDownloaded: this.jobState?.downloadedIds?.includes(awemeId) || false,
+      coverDownloaded: this.jobState?.coverDownloadedIds?.includes(awemeId) || false,
+      failed: Boolean(this.jobState?.failedItems?.[awemeId]),
+      coverFailed: Boolean(this.jobState?.coverFailedItems?.[awemeId]),
+      running,
+      runningType: running ? this.currentDownloadType : null,
+    }
   }
 
   getCounts() {

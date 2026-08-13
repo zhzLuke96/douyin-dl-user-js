@@ -6,6 +6,56 @@ import type { MediaHandler } from "../handlers/MediaHandler"
 import type { VideoHandler } from "../handlers/VideoHandler"
 import type { DanmakuHandler } from "../handlers/DanmakuHandler"
 import type { ProfilePageHandler } from "../handlers/profile/ProfilePageHandler"
+import type { FeedCardStatus } from "../handlers/profile/ProfileDownloadManager"
+
+const FEED_STATUS_STYLES: Record<"running" | "downloaded" | "failed" | "pending", { background: string; border: string; color: string }> = {
+  running: { background: "#2b2b2d", border: "1px solid #ffb74d", color: "#ffd79a" },
+  downloaded: { background: "#2b2b2d", border: "1px solid #66bb6a", color: "#a5d6a7" },
+  failed: { background: "#2b2b2d", border: "1px solid #ef5350", color: "#ef9a9a" },
+  pending: { background: "#2b2b2d", border: "1px solid rgba(255,255,255,0.35)", color: "#fff" },
+}
+
+function formatFeedFileSize(bytes?: number): string {
+  if (!bytes || bytes <= 0) return ""
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
+  const value = bytes / Math.pow(1024, index)
+  return value.toFixed(index === 0 ? 0 : 1) + " " + units[index]
+}
+
+function formatFeedDuration(duration?: number): string {
+  if (!duration || duration <= 0) return ""
+  const totalSeconds = Math.max(1, Math.round(duration >= 1000 ? duration / 1000 : duration))
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds % 60
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+}
+
+function applyFeedStatusStyle(el: HTMLElement, tone: keyof typeof FEED_STATUS_STYLES) {
+  const style = FEED_STATUS_STYLES[tone]
+  el.style.background = style.background
+  el.style.border = style.border
+  el.style.color = style.color
+}
+
+function getFeedMetaLines(media: any): string[] {
+  if (!media) return []
+  if (Array.isArray(media.images) && media.images.length > 0) return ["🖼️ 图集", `图片数: ${media.images.length}张`]
+  const video = media.video
+  if (!video) return []
+  const candidates = (video.bitRateList || []).filter((item: any) => item?.format !== "dash" && (item.dataSize || item.width || item.height))
+  const best = candidates.slice().sort((a: any, b: any) => (b.dataSize || 0) - (a.dataSize || 0))[0] || video
+  const width = best.width || video.width
+  const height = best.height || video.height
+  const size = formatFeedFileSize(best.dataSize || video.dataSize)
+  const duration = formatFeedDuration(video.duration)
+  const lines = ["🎬 视频"]
+  if (width && height) lines.push(`分辨率: ${width}x${height}`)
+  if (size) lines.push(`最大大小: ${size}`)
+  if (duration) lines.push(`时长: ${duration}`)
+  return lines
+}
 
 /**
  * DOM Patcher - 负责DOM监听、注入下载按钮及相关UI元素
@@ -242,23 +292,34 @@ export class DOMPatcher {
       touchAction: "manipulation",
     })
 
-    const badge = document.createElement("div")
-    Object.assign(badge.style, {
+    const badgeGroup = document.createElement("div")
+    Object.assign(badgeGroup.style, {
       position: "absolute",
       top: "10px",
       left: "10px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "flex-start",
+      gap: "8px",
+      maxWidth: "calc(100% - 20px)",
+      pointerEvents: "none",
+      userSelect: "none",
+    })
+
+    const badge = document.createElement("div")
+    Object.assign(badge.style, {
       display: "inline-flex",
       alignItems: "center",
       gap: "6px",
-      padding: "6px 10px",
+      height: "27px",
+      padding: "0 10px",
+      boxSizing: "border-box",
       borderRadius: "999px",
-      background: "rgba(0,0,0,0.55)",
-      border: "1px solid rgba(255,255,255,0.25)",
+      background: "#2b2b2d",
+      border: "1px solid rgba(255,255,255,0.35)",
       color: "#fff",
       fontSize: "12px",
       fontFamily: "sans-serif",
-      pointerEvents: "none",
-      userSelect: "none",
     })
     const cb = document.createElement("input")
     cb.type = "checkbox"
@@ -268,13 +329,85 @@ export class DOMPatcher {
     label.className = "dy-dl-feed-select-label"
     label.textContent = "选择"
     badge.append(cb, label)
-    mask.append(badge)
+
+    const statusRow = document.createElement("div")
+    Object.assign(statusRow.style, {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "6px",
+    })
+
+    const makeStatusBadge = (className: string) => {
+      const el = document.createElement("div")
+      el.className = className
+      Object.assign(el.style, {
+        display: "inline-flex",
+        alignItems: "center",
+        height: "27px",
+        padding: "0 10px",
+        boxSizing: "border-box",
+        borderRadius: "999px",
+        background: "#2b2b2d",
+        border: "1px solid rgba(255,255,255,0.35)",
+        color: "#fff",
+        fontSize: "12px",
+        fontFamily: "sans-serif",
+        whiteSpace: "nowrap",
+      })
+      return el
+    }
+    const contentBadge = makeStatusBadge("dy-dl-feed-content-status")
+    const coverBadge = makeStatusBadge("dy-dl-feed-cover-status")
+    statusRow.append(contentBadge, coverBadge)
+
+    const metaPanel = document.createElement("div")
+    metaPanel.className = "dy-dl-feed-meta"
+    Object.assign(metaPanel.style, {
+      display: "none",
+      flexDirection: "column",
+      gap: "2px",
+      maxWidth: "100%",
+      padding: "6px 10px",
+      boxSizing: "border-box",
+      borderRadius: "10px",
+      background: "#2b2b2d",
+      border: "1px solid rgba(255,255,255,0.35)",
+      color: "#fff",
+      fontSize: "12px",
+      fontFamily: "sans-serif",
+      lineHeight: "1.5",
+    })
+
+    badgeGroup.append(badge, statusRow, metaPanel)
+    mask.append(badgeGroup)
     card.appendChild(mask)
 
-    const renderState = (selected: boolean) => {
-      cb.checked = selected
-      mask.setAttribute("aria-pressed", selected ? "true" : "false")
-      mask.style.boxShadow = selected ? "inset 0 0 0 2px rgba(64,150,255,0.75)" : "none"
+    const renderState = (status: FeedCardStatus) => {
+      cb.checked = status.selected
+      mask.setAttribute("aria-pressed", status.selected ? "true" : "false")
+      mask.style.boxShadow = status.selected ? "inset 0 0 0 2px rgba(64,150,255,0.75)" : "none"
+
+      const contentRunning = status.running && status.runningType === "content"
+      const coverRunning = status.running && status.runningType === "cover"
+      contentBadge.textContent = contentRunning ? "内容下载中" : status.failed ? "内容失败" : status.contentDownloaded ? "内容已下载" : "内容未下载"
+      applyFeedStatusStyle(contentBadge, contentRunning ? "running" : status.failed ? "failed" : status.contentDownloaded ? "downloaded" : "pending")
+      coverBadge.textContent = coverRunning ? "封面下载中" : status.coverFailed ? "封面失败" : status.coverDownloaded ? "封面已下载" : "封面未下载"
+      applyFeedStatusStyle(coverBadge, coverRunning ? "running" : status.coverFailed ? "failed" : status.coverDownloaded ? "downloaded" : "pending")
+
+      const media = this.profilePageHandler.dataService.feedMediaCache.get(awemeId)
+      const lines = media ? getFeedMetaLines(media) : []
+      metaPanel.replaceChildren()
+      if (lines.length) {
+        metaPanel.style.display = "flex"
+        lines.forEach((line) => {
+          const row = document.createElement("span")
+          row.style.whiteSpace = "nowrap"
+          row.textContent = line
+          metaPanel.append(row)
+        })
+      } else {
+        metaPanel.style.display = "none"
+      }
     }
 
     const toggle = (ev: Event) => {
@@ -286,14 +419,13 @@ export class DOMPatcher {
     mask.addEventListener("click", toggle)
     mask.addEventListener("mousedown", (ev) => ev.stopPropagation())
 
-    renderState(this.profilePageHandler.downloadManager._isFeedSelected(awemeId))
-    const off = this.profilePageHandler.downloadManager.on("countsUpdated", () => {
-      if (!mask.parentElement) {
-        off()
-        return
-      }
-      renderState(this.profilePageHandler.downloadManager._isFeedSelected(awemeId))
-    })
+    const render = () => {
+      if (!mask.parentElement) return
+      renderState(this.profilePageHandler.downloadManager.getFeedCardStatus(awemeId))
+    }
+    render()
+    this.profilePageHandler.downloadManager.on("countsUpdated", render)
+    this.profilePageHandler.downloadManager.on("stateChanged", render)
   }
 
   /** 启动 DOM 观察 */
