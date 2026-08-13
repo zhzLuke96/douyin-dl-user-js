@@ -37,6 +37,48 @@ const s = {
   row: css({ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }),
   label: css({ color: "rgba(255,255,255,0.6)" }),
   value: css({ color: "#fff", fontWeight: 500 }),
+  stats: css({
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px 10px",
+    marginTop: "8px",
+    fontSize: "11px",
+    lineHeight: 1.4,
+    color: "rgba(255,255,255,0.55)",
+  }),
+  progressSection: css({ marginTop: "10px" }),
+  progressHeader: css({
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: "6px",
+    fontSize: "11px",
+    color: "rgba(255,255,255,0.6)",
+  }),
+  progressBar: css({
+    height: "6px",
+    background: "rgba(255,255,255,0.1)",
+    borderRadius: "3px",
+    overflow: "hidden",
+  }),
+  progressFill: css({
+    height: "100%",
+    background: theme.colors.primary,
+    borderRadius: "3px",
+    transition: "width 0.3s",
+  }),
+  select: css({
+    padding: "7px 10px",
+    borderRadius: "20px",
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.08)",
+    color: "#fff",
+    fontSize: "12px",
+    cursor: "pointer",
+    outline: "none",
+    minWidth: "74px",
+    "& option": { background: "#2c2c2e", color: "#fff" },
+    "&:disabled": { opacity: 0.5, cursor: "not-allowed" },
+  }),
   btnGroup: css({ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }),
   btn: css({
     flex: 1,
@@ -83,9 +125,8 @@ const s = {
     wordBreak: "keep-all",
     whiteSpace: "nowrap",
   }),
-  summary: css({ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "8px", lineHeight: 1.4, whiteSpace: "pre-line" }),
 }
-import type { ProfileDownloadManager } from "../handlers/profile/ProfileDownloadManager"
+import type { ProfileDownloadManager, DownloadType } from "../handlers/profile/ProfileDownloadManager"
 import type { ProfileDataService } from "../handlers/profile/ProfileDataService"
 
 const PANEL_OPEN_KEY = "__douyin-dl-profile-panel-open__"
@@ -119,6 +160,7 @@ export const FloatingPanelApp = ({
   const [exp, setExp] = useState(readPanelOpen)
   const [snap, setSnap] = useState(() => downloadManager.getSnapshot())
   const [showJob, setShowJob] = useState(false)
+  const [concurrency, setConcurrency] = useState(snap.concurrency || 1)
   useEffect(() => {
     const off = downloadManager.on("stateChanged", () => setSnap(downloadManager.getSnapshot()))
     const off2 = downloadManager.on("countsUpdated", () => setSnap(downloadManager.getSnapshot()))
@@ -127,10 +169,17 @@ export const FloatingPanelApp = ({
       off2()
     }
   }, [])
+  useEffect(() => {
+    setConcurrency(snap.concurrency || 1)
+  }, [snap.concurrency])
   if (!dataService.isProfilePage()) return null
-  const startJob = async () => {
+  const progressType = snap.downloadType
+  const progressCount = Object.values(snap.itemStatuses || {}).filter((status) => status === "success").length
+  const progressTotal = Math.max(snap.counts.selected, 1)
+  const progressPercent = Math.min(100, Math.round((progressCount / progressTotal) * 100))
+  const startJob = async (downloadType: DownloadType = "content") => {
     try {
-      await downloadManager.startJob()
+      await downloadManager.startJob(downloadType, concurrency)
     } catch (e: any) {
       alert(e.message || e)
     }
@@ -154,23 +203,32 @@ export const FloatingPanelApp = ({
             <span className={s.label}>状态</span>
             <span className={s.value}>{snap.statusLabel}</span>
           </div>
-          <div className={s.row}>
-            <span className={s.label}>已发现</span>
-            <span className={s.value}>{snap.counts.known}</span>
+          <div className={s.stats}>
+            <span>发现 {snap.counts.known}</span>
+            <span>已选 {snap.counts.selected}</span>
+            <span>内容 {snap.counts.downloaded}</span>
+            <span>封面 {snap.counts.coverDownloaded}</span>
+            <span>失败 {snap.counts.failed + snap.counts.coverFailed}</span>
           </div>
-          <div className={s.row}>
-            <span className={s.label}>已选中</span>
-            <span className={s.value}>{snap.counts.selected}</span>
-          </div>
-          <div className={s.row}>
-            <span className={s.label}>已下载</span>
-            <span className={s.value}>{snap.counts.downloaded}</span>
-          </div>
-          <div className={s.row}>
-            <span className={s.label}>失败</span>
-            <span className={s.value}>{snap.counts.failed}</span>
+          <div className={s.progressSection}>
+            <div className={s.progressHeader}>
+              <span>{progressType === "cover" ? "封面进度" : "内容进度"}</span>
+              <span>
+                {progressCount}/{progressTotal}
+              </span>
+            </div>
+            <div className={s.progressBar}>
+              <div className={s.progressFill} style={{ width: progressPercent + "%" }} />
+            </div>
           </div>
           <div className={s.btnGroup}>
+            <select className={s.select} value={concurrency} disabled={snap.jobRunning} onChange={(e) => setConcurrency(Number((e.target as HTMLSelectElement).value))}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>
+                  并发 {n}
+                </option>
+              ))}
+            </select>
             <button className={s.btn} onClick={() => downloadManager.markSelectAll(!downloadManager.isSelectAll())}>
               {downloadManager.isSelectAll() ? "取消全选" : "全选"}
             </button>
@@ -180,18 +238,21 @@ export const FloatingPanelApp = ({
             <button className={s.btn} onClick={() => setShowJob(true)}>
               查看详情
             </button>
-            <br />
             {!snap.jobRunning ? (
-              <button className={s.btnPrimary} onClick={startJob} disabled={snap.counts.selected === 0}>
-                开始下载
-              </button>
+              <>
+                <button className={s.btnPrimary} onClick={() => startJob("content")} disabled={snap.counts.selected === 0}>
+                  开始下载
+                </button>
+                <button className={s.btn} onClick={() => startJob("cover")} disabled={snap.counts.selected === 0}>
+                  下载封面
+                </button>
+              </>
             ) : (
               <button className={s.btnDanger} onClick={() => downloadManager.pauseJob()}>
                 暂停
               </button>
             )}
           </div>
-          <div className={s.summary}>{snap.summary}</div>
         </div>
       )}
       {showJob && <ProfileJobModalApp downloadManager={downloadManager} onClose={() => setShowJob(false)} />}

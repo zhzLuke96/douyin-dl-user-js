@@ -278,7 +278,6 @@ export class ProfileDownloadManager extends Emitter<Events> {
       downloadType: this.currentDownloadType,
       concurrency: this._concurrency,
       itemStatuses: { ...itemStatuses },
-      summary: `${statusLabel} 选择/发现: ${this.selectedIds.size}/${this.jobState?.knownIds?.length || 0}\n内容已下载: ${counts.downloaded} 失败: ${counts.failed}\n封面已下载: ${counts.coverDownloaded} 失败: ${counts.coverFailed}`,
     }
   }
 
