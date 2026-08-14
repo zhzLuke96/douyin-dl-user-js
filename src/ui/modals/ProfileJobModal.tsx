@@ -529,7 +529,7 @@ export const ProfileJobModalApp = ({ downloadManager, onClose }: { downloadManag
   const isFilteredAllSelected = filteredList.length > 0 && filteredList.every((item) => item.selected)
 
   const handleSelectAll = (checked: boolean) => {
-    filteredList.forEach((item) => downloadManager.markSelect(item.awemeId, checked))
+    downloadManager.markSelectMany(filteredList.map((item) => item.awemeId), checked)
   }
 
   const handleSelectRow = (awemeId: string, checked: boolean) => {

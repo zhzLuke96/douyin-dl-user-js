@@ -199,6 +199,24 @@ export class ProfileDownloadManager extends Emitter<Events> {
     }
   }
 
+  markSelectMany(ids: string[], selected: boolean) {
+    let changed = false
+    for (const awemeId of ids) {
+      const has = this.selectedIds.has(awemeId)
+      if (selected && !has) {
+        this.selectedIds.add(awemeId)
+        changed = true
+      } else if (!selected && has) {
+        this.selectedIds.delete(awemeId)
+        changed = true
+      }
+    }
+    if (changed) {
+      this.emit("stateChanged", this)
+      this.emit("countsUpdated", this.getCounts())
+    }
+  }
+
   markSelectAll(selected: boolean) {
     if (!selected) this.selectedIds.clear()
     else this.jobState?.knownIds?.forEach((id) => this.selectedIds.add(id))
