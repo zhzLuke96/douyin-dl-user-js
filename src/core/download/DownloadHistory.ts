@@ -1,4 +1,5 @@
 import type { MediaLite } from "../../types/lite"
+import { trySetLocalStorage } from "../../utils/storage"
 
 export class DownloadHistory {
   static STORAGE_KEY = "__douyin-dl-history__"
@@ -31,7 +32,7 @@ export class DownloadHistory {
     }
     history.unshift(record) // 最新在前
     if (history.length > this.MAX_ITEMS) history.pop()
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(history))
+    trySetLocalStorage(this.STORAGE_KEY, JSON.stringify(history))
     return record
   }
 

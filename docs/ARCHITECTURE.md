@@ -289,7 +289,7 @@ idle → running → [completed | paused]
 ```
 
 - 事件驱动: stateChanged/countsUpdated/jobStarted/jobStopped/jobCompleted
-- 持久化: localStorage (knownIds, downloadedIds, failedItems)
+- 持久化: IndexedDB (knownIds, downloadedIds, failedItems)；旧 localStorage 启动时迁移清理（updatedAt 对比，中断不会用旧数据覆盖新状态），IDB 最多保留最近 30 条且超过 90 天未更新的状态会被清理
 - 滚动采集: throttle 1s, 监听 wheel 事件
 
 ---

@@ -1,5 +1,5 @@
 import { Emitter } from "../../core/Emitter"
-import { ProfileDownloadState } from "../../core/download/ProfileDownloadState"
+import { ProfileDownloadState, type ProfileState } from "../../core/download/ProfileDownloadState"
 import { throttle } from "../../utils/performance"
 import type { MediaHandler } from "../MediaHandler"
 import type { ProfileDataService } from "./ProfileDataService"
@@ -63,6 +63,10 @@ export class ProfileDownloadManager extends Emitter<Events> {
   /** 选中的媒体 */
   selectedIds = new Set<string>()
   private collect_timer: ReturnType<typeof setInterval> | null = null
+  private _loadPromise: Promise<ProfileState | null> | null = null
+  private _loadProfileKey = ""
+  private _saveQueue: Promise<void> = Promise.resolve()
+  private _storageInit = ProfileDownloadState.migrateLegacyStorage().then(() => ProfileDownloadState.pruneOldStates())
 
   constructor({ mediaHandler, dataService }: { mediaHandler: MediaHandler; dataService: ProfileDataService }) {
     super()
@@ -73,13 +77,14 @@ export class ProfileDownloadManager extends Emitter<Events> {
     window.addEventListener("wheel", collect, { passive: false })
   }
 
-  collect() {
+  async collect() {
     if (!this.dataService.isProfilePage()) return
-    this._ensureJobState()
-    const prev = this.jobState?.knownIds.length || 0
+    await this._ensureJobState()
+    if (!this.jobState) return
+    const prev = this.jobState.knownIds.length || 0
     const mediaList = this.dataService.collectCurrentFeedMedia()
     this.mergeMediaIntoState(mediaList)
-    const changed = (this.jobState?.knownIds.length || 0) - prev
+    const changed = this.jobState.knownIds.length - prev
     if (changed) {
       this.emit("stateChanged", this)
       this.emit("countsUpdated", this.getCounts())
@@ -87,29 +92,49 @@ export class ProfileDownloadManager extends Emitter<Events> {
   }
 
   // 确保 jobState 与当前页面 profile 匹配
-  private _ensureJobState(profile?: any) {
-    if (!profile) {
-      profile = this.dataService.getProfileContext()
-    }
-    if (!profile) {
+  private async _ensureJobState(profile?: any): Promise<ProfileState | null> {
+    const context = profile || this.dataService.getProfileContext()
+    if (!context) {
       if (!this.jobRunning) {
         this.jobState = null
         this._clearSessionState()
       }
       return null
     }
-    if (!this.jobState || (!this.jobRunning && this.jobState.profileKey !== profile.profileKey)) {
-      if (!this.jobRunning) {
-        this._clearSessionState()
-        this.jobState = ProfileDownloadState.load(profile.profileKey, profile)
-      }
+    const needLoad = !this.jobState || (!this.jobRunning && this.jobState.profileKey !== context.profileKey)
+    if (!needLoad) return this.jobState
+    if (this._loadProfileKey === context.profileKey && this._loadPromise) {
+      return this._loadPromise
     }
-    return this.jobState
+    this._clearSessionState()
+    this.jobState = null
+    const loadProfileKey = context.profileKey
+    this._loadProfileKey = loadProfileKey
+    const load = this._storageInit
+      .then(() => ProfileDownloadState.load(loadProfileKey, context))
+      .then((state) => {
+        if (this._loadProfileKey === loadProfileKey) this.jobState = state
+        return state
+      })
+      .catch((error) => {
+        console.error("[dy-dl]加载作者下载状态失败", error)
+        if (this._loadProfileKey === loadProfileKey) this.jobState = ProfileDownloadState.create_default(context)
+        return this.jobState
+      })
+      .finally(() => {
+        if (this._loadProfileKey === loadProfileKey) {
+          this._loadPromise = null
+          this._loadProfileKey = ""
+        }
+        this.emit("stateChanged", this)
+      })
+    this._loadPromise = load
+    return load
   }
 
   /** 页面跳转后同步当前会话状态 */
-  syncPageState() {
-    this._ensureJobState()
+  async syncPageState() {
+    await this._ensureJobState()
     this.emit("stateChanged", this)
   }
 
@@ -121,10 +146,20 @@ export class ProfileDownloadManager extends Emitter<Events> {
     this._concurrency = 1
   }
 
-  private _saveJobState() {
-    if (!this.jobState?.profileKey) return this.jobState
-    this.jobState = ProfileDownloadState.save(this.jobState.profileKey, this.jobState)
-    return this.jobState
+  private _saveJobState(): Promise<ProfileState | null> {
+    if (!this.jobState?.profileKey) return Promise.resolve(this.jobState)
+    const profileKey = this.jobState.profileKey
+    const run = this._saveQueue.then(async () => {
+      await this._storageInit
+      const state = this.jobState
+      if (!state?.profileKey || state.profileKey !== profileKey) return state
+      return ProfileDownloadState.save(profileKey, state)
+    })
+    this._saveQueue = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
   }
 
   private _push_log(status: JobLogStatus, message: string, media?: any, type: DownloadType = this.currentDownloadType) {
@@ -279,7 +314,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
   }
 
   getSnapshot(profileNameFallback = "当前作者主页") {
-    if (!this.jobState) this._ensureJobState()
+    if (!this.jobState) void this._ensureJobState()
     const isProfilePage = this.dataService.isProfilePage()
     const profile = !this.jobRunning && isProfilePage ? this.dataService.getProfileContext() : null
     const profileName = this.jobState?.profileName || profile?.profileName || profileNameFallback
@@ -313,28 +348,32 @@ export class ProfileDownloadManager extends Emitter<Events> {
   }
 
   // 重置状态
-  resetState(): boolean {
+  async resetState(): Promise<boolean> {
     const profile = this.dataService.getProfileContext()
     if (!profile) return false
-    if (this.jobRunning) this.endJob()
+    if (this.jobRunning) await this.endJob()
+    await this._storageInit
+    await this._saveQueue
     this.jobLog = []
-    ProfileDownloadState.reset(profile.profileKey)
+    await ProfileDownloadState.reset(profile.profileKey)
     this.currentDownloadType = "content"
     this._concurrency = 1
     this._itemStatus = {}
     this.jobState = ProfileDownloadState.create_default(profile)
-    this.collect()
+    this._loadPromise = null
+    this._loadProfileKey = ""
+    await this.collect()
     this.emit("stateChanged", this)
     return true
   }
 
   // 暂停当前下载，循环会在当前项结束后停止
-  pauseJob() {
+  async pauseJob() {
     if (!this.jobRunning || this.jobStopRequested) return
     this.jobStopRequested = true
     if (this.jobState?.profileKey) {
       this.jobState.status = "paused"
-      this._saveJobState()
+      await this._saveJobState()
     }
     this._push_log("info", "已暂停")
     this.emit("jobPaused")
@@ -349,12 +388,12 @@ export class ProfileDownloadManager extends Emitter<Events> {
   }
 
   // 结束当前下载阶段，回到选择阶段
-  endJob() {
+  async endJob() {
     if (this.jobRunning) this.jobStopRequested = true
     this.jobEndRequested = true
     if (this.jobState?.profileKey) {
       this.jobState.status = "idle"
-      this._saveJobState()
+      await this._saveJobState()
     }
     this._push_log("info", "已结束")
     this.emit("jobEnded")
@@ -364,6 +403,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
   // 启动下载循环（由外部调用，这里只做前置准备）
   async startJob(downloadType: DownloadType = this.currentDownloadType, concurrency = 1) {
     if (!this.dataService.isProfilePage()) throw new Error("请在作者主页中使用全量下载。")
+    await this._ensureJobState()
     if (this.jobRunning) return
     if (this.mediaHandler.downloading) throw new Error("当前已有下载任务在进行中。")
     const releaseLock = this.mediaHandler._flag_start_download()
@@ -392,12 +432,12 @@ export class ProfileDownloadManager extends Emitter<Events> {
   private async _runDownloadLoop() {
     const profile = this.dataService.getProfileContext()
     if (!profile) throw new Error("无法获取作者信息。")
-    this._ensureJobState(profile)
+    await this._ensureJobState(profile)
     if (!this.jobState) return
     this.jobState.status = "running"
     this.jobState.lastRunAt = Date.now()
     this.jobState.completedAt = 0
-    this._saveJobState()
+    await this._saveJobState()
     this.emit("stateChanged", this)
 
     // 获取所有选中但尚未成功下载的作品ID
@@ -414,7 +454,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
     if (pendingIds.length === 0) {
       this.jobState.status = this.jobEndRequested ? "idle" : "completed"
       if (this.jobState.status === "completed") this.jobState.completedAt = Date.now()
-      this._saveJobState()
+      await this._saveJobState()
       if (this.jobState.status === "completed") {
         this._push_log("info", "没有待下载项，任务完成")
         this.emit("jobCompleted")
@@ -430,14 +470,14 @@ export class ProfileDownloadManager extends Emitter<Events> {
     if (!this.jobState) return
     if (this.jobStopRequested) {
       this.jobState.status = this.jobEndRequested ? "idle" : "paused"
-      this._saveJobState()
+      await this._saveJobState()
       this.emit("stateChanged", this)
       return
     }
     // 任务完成
     this.jobState.status = this.jobEndRequested ? "idle" : "completed"
     if (this.jobState.status === "completed") this.jobState.completedAt = Date.now()
-    this._saveJobState()
+    await this._saveJobState()
     if (this.jobState.status === "completed") {
       this._push_log("info", "下载完成")
       this.emit("jobCompleted")
@@ -454,7 +494,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
       this._itemStatus[awemeId] = "failed"
       this._push_log("failed", "缓存中未找到作品，已标记失败", fakeMedia)
       this.markFailed(fakeMedia, "cache_miss", downloadType, "缓存中未找到作品")
-      this._saveJobState()
+      await this._saveJobState()
       this.emit("stateChanged", this)
       this.emit("countsUpdated", this.getCounts())
       return
@@ -484,7 +524,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
       this.markFailed(media, reason, downloadType, errorMessage)
       this._push_log("failed", "下载失败：" + errorMessage, media)
     }
-    this._saveJobState()
+    await this._saveJobState()
     this.emit("stateChanged", this)
     this.emit("countsUpdated", this.getCounts())
     // 每项下载后稍作延迟，降低并发请求过快风险
@@ -508,7 +548,7 @@ export class ProfileDownloadManager extends Emitter<Events> {
           this._itemStatus[awemeId] = "failed"
           this._push_log("failed", "下载异常：" + errorMessage, media || fallbackMedia)
           this.markFailed(media || fallbackMedia, "unexpected_error", downloadType, errorMessage)
-          this._saveJobState()
+          await this._saveJobState()
           this.emit("stateChanged", this)
           this.emit("countsUpdated", this.getCounts())
         }
