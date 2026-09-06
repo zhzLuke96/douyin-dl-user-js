@@ -1,6 +1,6 @@
 {
   "name": "douyin-dl-user-js",
-  "version": "1.5.13",
+  "version": "1.5.14",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -8,10 +8,11 @@
     "build": "node build.mjs",
     "build:minify": "node build.mjs --minify",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "format": "prettier --write src/",
-    "format:check": "prettier --check src/"
+    "test": "vitest run",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "format": "prettier --write src/ tests/",
+    "format:check": "prettier --check src/ tests/"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +27,7 @@
     "eslint": "^10.6.0",
     "prettier": "^3.9.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.63.0"
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^5.0.0"
   }
 }

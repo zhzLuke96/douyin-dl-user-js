@@ -5,6 +5,7 @@ import { theme } from "../../utils/theme"
 import { Modal } from "./Modal"
 import { DownloadHistory } from "../../core/download/DownloadHistory"
 import { runInContext, formatDate } from "../../utils/format"
+import { normalizeBasename, normalizePathSegment } from "../../utils/string"
 import { Config } from "../../core/Config"
 
 const cssFn = createCSS()
@@ -185,7 +186,7 @@ const previewFilename = (template: string, maxLen: number): string => {
   tag_list.forEach((t: string) => {
     rawDesc = rawDesc.replace(new RegExp("#" + t + "\\s*", "g"), "")
   })
-  rawDesc = rawDesc.trim().replace(/[#/?<>\\:*|":]/g, "")
+  rawDesc = rawDesc.trim().replace(/[#/?<>\\:*|":]/g, "_")
   const now_date = new Date()
   const create_date = new Date(Number(mockMedia.createTime) * 1000)
   const ctx: any = {
@@ -211,8 +212,7 @@ const previewFilename = (template: string, maxLen: number): string => {
   } catch {
     base = runInContext(ctx, "`${nickname}_${short_id}_${tags}_${desc}`")
   }
-  if (base.length > maxLen) base = base.slice(0, maxLen)
-  return base.replace(/\./g, "_")
+  return normalizeBasename(base, { maxLength: maxLen })
 }
 
 const previewDirPath = (template: string): string => {
@@ -224,7 +224,7 @@ const previewDirPath = (template: string): string => {
     authorUserId,
   } = mockMedia
   const uid = authorUserId
-  const userDir = `${uid}_${nickname}`.replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, "_")
+  const userDir = normalizePathSegment(`${uid}_${nickname}`)
   const ctx: any = {
     user_dir: userDir,
     nickname,

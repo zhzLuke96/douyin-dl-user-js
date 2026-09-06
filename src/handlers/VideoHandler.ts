@@ -1,3 +1,5 @@
+import { normalizeFilename } from "../utils/string"
+
 /**
  * 和视频相关的操作，比如截图当前视频帧
  */
@@ -71,7 +73,7 @@ export class VideoHandler {
     ctx.drawImage(video, 0, 0)
     const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"))
     const link = document.createElement("a")
-    link.download = "frame_" + Date.now() + ".png"
+    link.download = normalizeFilename("frame_" + Date.now() + ".png")
     link.href = URL.createObjectURL(blob)
     link.click()
     URL.revokeObjectURL(link.href)

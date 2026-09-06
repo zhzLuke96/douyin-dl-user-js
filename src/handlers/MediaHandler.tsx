@@ -5,9 +5,19 @@ import { DownloadHistory } from "../core/download/DownloadHistory"
 import { Modal } from "../ui/modals/Modal"
 import { createToast } from "../utils/dom"
 import { formatDate, runInContext } from "../utils/format"
+import { normalizeBasename } from "../utils/string"
 import type { PlayerInstanceLite } from "../types/lite"
 import { DouyinMedia } from "@/types"
 import { getBestCoverUrl } from "./douyin/getBestCoverUrl"
+
+const escapeRegExp = (value: string): string => {
+  let result = ""
+  for (const char of value) {
+    if ("\\^$.*+?()[]{}|".includes(char)) result += "\\"
+    result += char
+  }
+  return result
+}
 
 // #region 主入口组件 ---
 /**
@@ -60,9 +70,9 @@ export class MediaHandler {
     const tags = tag_list.map((x: string) => "#" + x).join("_")
     let rawDesc = desc || ""
     tag_list.forEach((t: string) => {
-      rawDesc = rawDesc.replace(new RegExp("#" + t + "\\s*", "g"), "")
+      rawDesc = rawDesc.replace(new RegExp("#" + escapeRegExp(t) + "\\s*", "g"), "")
     })
-    rawDesc = rawDesc.trim().replace(/[#/?<>\\:*|":]/g, "")
+    rawDesc = rawDesc.trim().replace(/[#/?<>\\:*|":]/g, "_")
     // 渲染文件名用的上下文
     const context: any = {
       nickname,
@@ -90,10 +100,7 @@ export class MediaHandler {
       console.error("[dy-dl] Error rendering filename template:", error)
       baseName = runInContext(context, Config.defaults.filename_template)
     }
-    if (baseName.length > filename_max_length) baseName = baseName.slice(0, filename_max_length)
-    // NOTE: 文件名截断问题，如果包含 "." 可能导致浏览器误判后缀名 #41
-    baseName = baseName.replace(/\./g, "_")
-    return baseName
+    return normalizeBasename(baseName, { maxLength: filename_max_length })
   }
 
   _bind_player_events() {

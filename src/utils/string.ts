@@ -1,52 +1,118 @@
 /**
- * 规范化文件名，移除非法字符，处理保留名称，限制长度
- * 原始文件名（不包含路径）
- * 可选配置：
- * - replacementChar: 替换非法字符的字符
- * - maxLength: 最大文件名长度（不含扩展名的部分会优先截断）
+ * 规范化最终保存的文件名，处理 Windows 禁字符、控制字符、保留名与长度。
+ * 输入应为不含路径的文件名，可以是带扩展名的完整文件名。
  */
-export function normalizeFilename(name: string, options: { replacementChar?: string; maxLength?: number } = {}): string {
-  const { replacementChar = "_", maxLength = 255 } = options
-  if (typeof name !== "string") return ""
+export interface NormalizeFilenameOptions {
+  replacementChar?: string
+  maxLength?: number
+}
 
-  const lastDotIndex = name.lastIndexOf(".")
-  let baseName = name
-  let extension = ""
+const ILLEGAL_FILENAME_CHARS = /[\\/:*?"<>|\x00-\x1f\x7f]/g
+const RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$/i
+const DEFAULT_MAX_LENGTH = 255
+const DEFAULT_FALLBACK = "file"
 
-  if (lastDotIndex > 0 && lastDotIndex < name.length - 1) {
-    baseName = name.slice(0, lastDotIndex)
-    extension = name.slice(lastDotIndex)
+function getReplacementChar(value?: string): string {
+  if (typeof value !== "string" || value.length !== 1) return "_"
+  if (/[\\/:*?"<>|\x00-\x1f\x7f]/.test(value)) return "_"
+  return value
+}
+
+function getMaxLength(value?: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return DEFAULT_MAX_LENGTH
+  return Math.floor(value)
+}
+
+function truncateUtf16(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value
+  let result = ""
+  for (const char of value) {
+    if (result.length + char.length > maxLength) break
+    result += char
   }
-
-  const illegalChars = /[\\/:*?"<>|\x00-\x1f\x7f]/g
-  let cleanBase = baseName.replace(illegalChars, replacementChar)
-
-  const reservedNames = /^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$/i
-  if (reservedNames.test(cleanBase)) {
-    cleanBase = replacementChar + cleanBase
-  }
-
-  cleanBase = cleanBase.trim().replace(/^\.+/, "").replace(/\.+$/, "")
-
-  if (cleanBase.length === 0) {
-    cleanBase = "file"
-  }
-
-  const multiReplacement = new RegExp(`${replacementChar}{2,}`, "g")
-  cleanBase = cleanBase.replace(multiReplacement, replacementChar)
-
-  const maxBaseLength = maxLength - extension.length
-  if (maxBaseLength > 0 && cleanBase.length > maxBaseLength) {
-    cleanBase = cleanBase.slice(0, maxBaseLength)
-  }
-
-  let result = cleanBase + extension
-
-  if (result.length === 0) {
-    result = "file"
-  }
-
   return result
+}
+
+function escapeRegExp(value: string): string {
+  let result = ""
+  for (const char of value) {
+    if ("\\^$.*+?()[]{}|".includes(char)) result += "\\"
+    result += char
+  }
+  return result
+}
+
+interface CleanSegmentOptions {
+  replacementChar: string
+  replaceDots: boolean
+  allowReserved: boolean
+  maxLength: number
+}
+
+function cleanSegment(value: string, options: CleanSegmentOptions): string {
+  let clean = value.replace(ILLEGAL_FILENAME_CHARS, options.replacementChar)
+  if (options.replaceDots) clean = clean.replace(/\./g, options.replacementChar)
+  clean = clean
+    .trim()
+    .replace(/^\.+/, "")
+    .replace(/[.\s]+$/, "")
+  if (!clean || clean === "." || clean === "..") clean = DEFAULT_FALLBACK
+  if (options.allowReserved && RESERVED_NAMES.test(clean)) clean = options.replacementChar + clean
+  clean = clean.replace(new RegExp(`${escapeRegExp(options.replacementChar)}{2,}`, "g"), options.replacementChar)
+  clean = truncateUtf16(clean, options.maxLength)
+  if (!clean) clean = truncateUtf16(DEFAULT_FALLBACK, options.maxLength)
+  return clean
+}
+
+function normalizeOptions(options: NormalizeFilenameOptions): { replacementChar: string; maxLength: number } {
+  return {
+    replacementChar: getReplacementChar(options.replacementChar),
+    maxLength: getMaxLength(options.maxLength),
+  }
+}
+
+/**
+ * 规范化完整文件名。最后一个点之后被视为扩展名，扩展名同样会清洗。
+ */
+export function normalizeFilename(name: unknown, options: NormalizeFilenameOptions = {}): string {
+  const { replacementChar, maxLength } = normalizeOptions(options)
+  const raw = typeof name === "string" ? name : ""
+  const lastDotIndex = raw.lastIndexOf(".")
+  const possibleExt = lastDotIndex > 0 && lastDotIndex < raw.length - 1 ? raw.slice(lastDotIndex + 1) : ""
+  const hasExtension = /[^\s.]/.test(possibleExt)
+  const rawBase = hasExtension ? raw.slice(0, lastDotIndex) : raw
+  const rawExt = hasExtension ? possibleExt : ""
+
+  const cleanExt = rawExt ? cleanSegment(rawExt, { replacementChar, replaceDots: false, allowReserved: false, maxLength }) : ""
+  const cleanBase = cleanSegment(rawBase, {
+    replacementChar,
+    replaceDots: false,
+    allowReserved: true,
+    maxLength: Math.max(1, maxLength - (cleanExt ? cleanExt.length + 1 : 0)),
+  })
+
+  if (!cleanBase && !cleanExt) return DEFAULT_FALLBACK
+  if (!cleanExt) return cleanBase
+  if (!cleanBase) return "." + cleanExt
+  return `${cleanBase}.${cleanExt}`
+}
+
+/**
+ * 规范化不带扩展名的文件名，并把其中的点一并处理，避免后续拼接扩展名时误判。
+ */
+export function normalizeBasename(name: unknown, options: NormalizeFilenameOptions = {}): string {
+  const { replacementChar, maxLength } = normalizeOptions(options)
+  const raw = typeof name === "string" ? name : ""
+  return cleanSegment(raw, { replacementChar, replaceDots: true, allowReserved: true, maxLength })
+}
+
+/**
+ * 规范化单个路径分段，用于作者目录等只应包含一段路径的值。
+ */
+export function normalizePathSegment(name: unknown, options: NormalizeFilenameOptions = {}): string {
+  const { replacementChar, maxLength } = normalizeOptions(options)
+  const raw = typeof name === "string" ? name : ""
+  return cleanSegment(raw, { replacementChar, replaceDots: false, allowReserved: true, maxLength })
 }
 
 /**

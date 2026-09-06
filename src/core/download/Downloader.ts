@@ -1,6 +1,7 @@
 import { ImageProcessor } from "./ImageProcessor"
 import { Config } from "../Config"
 import { DownloaderLauncher } from "./DownloaderLauncher"
+import { normalizeBasename, normalizeFilename } from "../../utils/string"
 
 interface DownloadResult {
   ok: boolean
@@ -109,11 +110,14 @@ export class Downloader {
       }
     }
 
-    let filename = filename_input || new URL(url).pathname.split("/").pop() || "download"
+    let filename = normalizeFilename(filename_input || new URL(url).pathname.split("/").pop() || "download")
     if (filename.endsWith(".image")) filename = filename.slice(0, -".image".length)
-    const filename_base = filename.replace(/\.[^/.]+$/, "")
+    filename = normalizeFilename(filename)
+    let filename_base = normalizeBasename(filename.replace(/\.[^/.]+$/, ""))
     const re = new RegExp("\\." + determinedFileExt + "$", "i")
-    if (!re.test(filename)) filename = filename_base + "." + determinedFileExt
+    if (!re.test(filename)) filename = normalizeFilename(filename_base + "." + determinedFileExt)
+    filename = normalizeFilename(filename)
+    filename_base = normalizeBasename(filename.replace(/\.[^/.]+$/, ""))
 
     return { filename, ext: determinedFileExt, isImage, isVideo, isWebP, headers, content_length, content_type, filename_base }
   }
@@ -149,7 +153,7 @@ export class Downloader {
   async download_blob(blob: Blob, filename: string) {
     const link = document.createElement("a")
     link.style.display = "none"
-    link.download = filename
+    link.download = normalizeFilename(filename)
     link.href = URL.createObjectURL(blob)
     document.body.appendChild(link)
     link.click()

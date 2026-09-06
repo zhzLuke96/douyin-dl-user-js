@@ -4,6 +4,7 @@ import { createCSS } from "../../utils/css-in-js"
 import { theme } from "../../utils/theme"
 import { DownloaderLauncher } from "../../core/download/DownloaderLauncher"
 import { getBestCoverUrl } from "@/handlers/douyin/getBestCoverUrl"
+import { normalizeFilename } from "../../utils/string"
 
 // --- 初始化 CSS-in-JS 工具 ---
 const css = createCSS()
@@ -234,7 +235,7 @@ const VideoSection = ({ video, media, filenameBase }: { video: any; media: any; 
               <a href={cu} target="_blank" className={styles.btn}>
                 新标签打开
               </a>
-              <a href={cu} download={"cover_" + filenameBase + ".jpeg"} className={styles.btn}>
+              <a href={cu} download={normalizeFilename("cover_" + filenameBase + ".jpeg")} className={styles.btn}>
                 下载封面
               </a>
             </div>

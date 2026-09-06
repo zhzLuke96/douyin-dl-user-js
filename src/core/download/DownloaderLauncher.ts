@@ -1,4 +1,5 @@
 import { runInContext } from "../../utils/format"
+import { normalizeBasename, normalizeFilename, normalizePathSegment } from "../../utils/string"
 
 interface LauncherConfig {
   idmList: Array<{ id: string; default?: boolean; [key: string]: any }>
@@ -6,6 +7,15 @@ interface LauncherConfig {
   bitcometList: Array<{ domain: string; port: string; path: string; authName: string; authPass: string; dir: string; default?: boolean; [key: string]: any }>
   abdmList: Array<{ domain: string; port: string; dir: string; default?: boolean; [key: string]: any }>
   curlTerminal: string
+}
+
+function urlFilenameFallback(url: string): string {
+  try {
+    const pathname = new URL(url).pathname.split("/").pop()
+    return pathname ? decodeURIComponent(pathname) : "download"
+  } catch {
+    return "download"
+  }
 }
 
 /**
@@ -52,24 +62,24 @@ export class DownloaderLauncher {
     dir_config?: { video?: string; image?: string; other?: string } | null,
     options: { filename_input?: string; media?: any; mediaType?: "video" | "image" } = {},
   ): Promise<boolean> {
-    const input_filename = options.filename_input || (options.media ? "media_" + Date.now() : "download")
+    const input_filename = options.filename_input || urlFilenameFallback(url)
     const media = options.media
 
-    const filename = input_filename
+    const filename = normalizeFilename(input_filename)
     const isVideo = filename.endsWith(".mp4") || filename.endsWith(".webm") || filename.endsWith(".ts")
     const isImage = filename.endsWith(".jpg") || filename.endsWith(".jpeg") || filename.endsWith(".png") || filename.endsWith(".webp")
 
     const authorInfo = media?.authorInfo || {}
     const userId = authorInfo.uid || media?.authorUserId || authorInfo.secUid || "unknown"
     const nickname = authorInfo.nickname || "unknown"
-    const userDir = (filename: string) => filename.replace(/[\\/:*?"<>|\x00-\x1f\x7f]/g, "_")
-    const safeUserDir = userDir(`${userId}_${nickname}`)
+    const safeUserDir = normalizePathSegment(`${userId}_${nickname}`)
+    const filename_base = normalizeBasename(filename.replace(/\.[^/.]+$/, ""))
     const mediaType = options.mediaType || (isVideo ? "video" : isImage ? "image" : "other")
     const defaultDir = mediaType === "video" ? `./douyin/${safeUserDir}/videos` : mediaType === "image" ? `./douyin/${safeUserDir}/images` : `./douyin/${safeUserDir}/others`
     const dirContext = {
       media,
       filename,
-      filename_base: input_filename,
+      filename_base,
       user_dir: safeUserDir,
       author_info: authorInfo,
       uid: userId,
@@ -217,6 +227,10 @@ export class DownloaderLauncher {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
+  private static commandSafeFilename(filename: string): string {
+    return normalizeFilename(filename).replace(/[!&|`"'$%]/g, "_")
+  }
+
   /**
    * 生成cURL命令
    */
@@ -225,7 +239,7 @@ export class DownloaderLauncher {
     const headerArgs = Object.entries(headers)
       .map(([k, v]) => `-H "${k}: ${v}"`)
       .join(" ")
-    const safeFilename = filename.replace(/[!?&|`"'*/:<>\\]/g, "_")
+    const safeFilename = DownloaderLauncher.commandSafeFilename(filename)
     return `${curlCmd} -L -C - "${link}" -o "${safeFilename}" ${headerArgs}`.trim()
   }
 
@@ -233,7 +247,7 @@ export class DownloaderLauncher {
    * 生成BC链接（比特彗星专用）
    */
   static toBitCometLink(link: string, filename: string, headers: Record<string, string> = {}): string {
-    const safeFilename = filename.replace(/[!?&|`"'*/:<>\\]/g, "_")
+    const safeFilename = DownloaderLauncher.commandSafeFilename(filename)
     const query = new URLSearchParams()
     query.append("url", link)
     for (const [k, v] of Object.entries(headers)) query.append(k, v)
@@ -248,6 +262,7 @@ export class DownloaderLauncher {
    * 发送到 IDM
    */
   async launchIDM(link: string, filename: string, filesize: number, headers: Record<string, any> = {}, idmConfig: any = null): Promise<boolean> {
+    filename = normalizeFilename(filename)
     const config = { ...this.getDefaultConfig("idm"), ...idmConfig }
     const clientId = config.id || "1"
     if (!clientId) throw new Error("IDM client id missing")
@@ -279,6 +294,7 @@ export class DownloaderLauncher {
    * 发送到 Aria2
    */
   async launchAria2(link: string, filename: string, headers: Record<string, any> = {}, aria2Config: any = null): Promise<boolean> {
+    filename = normalizeFilename(filename)
     const config = { ...this.getDefaultConfig("aria2"), ...aria2Config }
     const url = `${config.domain}:${config.port}${config.path}`
     const headerList = Object.entries(DownloaderLauncher.normalizeHeaders(headers)).map(([k, v]) => `${k}: ${v}`)
@@ -297,6 +313,7 @@ export class DownloaderLauncher {
    * 发送到比特彗星 (BitComet)
    */
   async launchBitComet(link: string, filename: string, headers: Record<string, any> = {}, bitcometConfig: any = null): Promise<boolean> {
+    filename = normalizeFilename(filename)
     const config = { ...this.getDefaultConfig("bitcomet"), ...bitcometConfig }
     const url = `${config.domain}:${config.port}${config.path}`
     const formData = new URLSearchParams()
@@ -324,6 +341,7 @@ export class DownloaderLauncher {
    * 发送到 AB Download Manager
    */
   async launchABDM(link: string, filename: string, headers: Record<string, any> = {}, abdmConfig: any = null): Promise<boolean> {
+    filename = normalizeFilename(filename)
     const config = { ...this.getDefaultConfig("abdm"), ...abdmConfig }
     const url = `${config.domain}:${config.port}/start-headless-download`
     const normHeaders = DownloaderLauncher.normalizeHeaders(headers)
@@ -352,7 +370,7 @@ export class DownloaderLauncher {
     const headerArgs = Object.entries(headers)
       .map(([k, v]) => `--header "${k}: ${v}"`)
       .join(" ")
-    const safeFilename = filename.replace(/[!?&|`"'*/:<>\\]/g, "_")
+    const safeFilename = DownloaderLauncher.commandSafeFilename(filename)
     return `aria2c "${link}" --out "${safeFilename}" ${headerArgs}`.trim()
   }
 }
