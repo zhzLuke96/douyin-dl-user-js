@@ -1,4 +1,5 @@
 import { normalizeFilename } from "../utils/string"
+import { getDouyinPlayer, readPlayerVideoElement } from "./PlayerAdapter"
 
 /**
  * 和视频相关的操作，比如截图当前视频帧
@@ -8,8 +9,7 @@ export class VideoHandler {
 
   /** 获取当前可见的视频元素 */
   private getVideoElement(): HTMLVideoElement | null {
-    const player = (window as any).player || (typeof unsafeWindow !== "undefined" && (unsafeWindow as any).player)
-    return player?.video || document.querySelector("video")
+    return readPlayerVideoElement(getDouyinPlayer())
   }
 
   /** 截取当前视频帧，返回 Blob 和 DataURL */

@@ -1,3 +1,5 @@
+import { isNewPlayer, readPlayerVideoSize } from "./PlayerAdapter"
+
 interface DanmakuItem {
   content?: string
   time?: number
@@ -23,8 +25,13 @@ export class DanmakuHandler {
 
   /** 获取视频宽高 */
   getMediaSize(player: any): { width: number; height: number } {
-    // NOTE: 这里主要是获取比例
-    return { width: player?.sizeInfo?.width || 1920, height: player?.sizeInfo?.height || 1080 }
+    const legacy = { width: player?.sizeInfo?.width, height: player?.sizeInfo?.height }
+    if (legacy.width && legacy.height) return { width: legacy.width, height: legacy.height }
+
+    // 新版 player 没有 sizeInfo，退回 media/video 或当前 DOM video 的真实尺寸
+    const size = readPlayerVideoSize(player)
+    if (size) return size
+    return { width: 1920, height: 1080 }
   }
 
   /** 毫秒转 ASS 时间格式 */
@@ -80,7 +87,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
   getDanmakuAssFileContent(player: any): string | undefined {
     const list = this.getDanmakuList(player)
     if (!list || list.length === 0) {
-      alert("当前视频弹幕为空，或者未加载完成")
+      alert(isNewPlayer(player) ? "[dy-dl]新版播放器弹幕功能正在适配中" : "当前视频弹幕为空，或者未加载完成")
       return
     }
     const size = this.getMediaSize(player)

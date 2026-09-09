@@ -19,17 +19,24 @@ export class TooltipsButton {
   label: string
   items: TooltipItem[]
   onclick: () => void
+  playerControlMode: "xgplayer" | "douyin"
 
-  constructor(label: string, items: TooltipItem[], onclick: () => void) {
+  constructor(label: string, items: TooltipItem[], onclick: () => void, playerControlMode: "xgplayer" | "douyin" = "douyin") {
     this.label = label
     this.items = items
     this.onclick = onclick
+    this.playerControlMode = playerControlMode
   }
 
   render(): HTMLElement {
+    const rootTag = this.playerControlMode === "xgplayer" ? "xg-icon" : "dy-icon"
+    const settingClass = this.playerControlMode === "xgplayer" ? "xgplayer-playclarity-setting" : "douyin-player-playclarity-setting"
     const htmlStr =
-      "<xg-icon" +
-      '  class="xgplayer-playclarity-setting dy-dl-video-btn"' +
+      "<" +
+      rootTag +
+      '  class="' +
+      settingClass +
+      ' dy-dl-video-btn"' +
       '  data-state="normal"' +
       '  data-index="11"' +
       ">" +
@@ -39,7 +46,9 @@ export class TooltipsButton {
       this.label +
       "</div>" +
       "  </div>" +
-      "</xg-icon>"
+      "</" +
+      rootTag +
+      ">"
 
     const root = renderHtml(htmlStr)
     const $gear = root.querySelector(".gear") as HTMLElement

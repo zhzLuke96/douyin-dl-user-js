@@ -9,6 +9,7 @@ import { normalizeBasename } from "../utils/string"
 import type { PlayerInstanceLite } from "../types/lite"
 import { DouyinMedia } from "@/types"
 import { getBestCoverUrl } from "./douyin/getBestCoverUrl"
+import { getDouyinPlayer, readPlayerMedia, subscribePlayer } from "./PlayerAdapter"
 
 const escapeRegExp = (value: string): string => {
   let result = ""
@@ -28,6 +29,7 @@ const escapeRegExp = (value: string): string => {
 export class MediaHandler {
   player: PlayerInstanceLite | null = null
   current_media: DouyinMedia.MediaRoot | null = null
+  dispose_player_events: (() => void) | null = null
   downloading = false
   downloader: Downloader
   download_current_media: (...args: any[]) => Promise<void>
@@ -105,12 +107,13 @@ export class MediaHandler {
 
   _bind_player_events() {
     if (!this.player) return
+    this.dispose_player_events?.()
     const update = () => {
-      if (this.player?.config?.awemeInfo) this.current_media = (this.player as any).config.awemeInfo
+      const media = readPlayerMedia(this.player)
+      if (media) this.current_media = media
     }
     update()
-    ;(this.player as any).on("play", update)
-    ;(this.player as any).on("seeked", update)
+    this.dispose_player_events = subscribePlayer(this.player, update)
   }
 
   /**
@@ -122,11 +125,13 @@ export class MediaHandler {
    */
   async _start_detect_player_change() {
     while (true) {
-      const cp = (window as any).player || (typeof unsafeWindow !== "undefined" && (unsafeWindow as any).player)
+      const cp = getDouyinPlayer()
       if (this.player !== cp) {
         this.player = cp
         if (this.player) this._bind_player_events()
       }
+      const media = readPlayerMedia(cp)
+      if (media) this.current_media = media
       await new Promise((r) => setTimeout(r, 1000))
     }
   }

@@ -57,6 +57,10 @@ function getFeedMetaLines(media: any): string[] {
   return lines
 }
 
+const PLAYER_CONTROL_SELECTOR = ".douyin-player-controls, xg-controls"
+const PLAYER_RIGHT_GRID_SELECTOR = ".douyin-player-controls-right, .xg-right-grid"
+const PLAYER_CONTROL_TREE_SELECTOR = `${PLAYER_CONTROL_SELECTOR}, ${PLAYER_RIGHT_GRID_SELECTOR}`
+
 /**
  * DOM Patcher - 负责DOM监听、注入下载按钮及相关UI元素
  */
@@ -67,6 +71,7 @@ export class DOMPatcher {
   danmakuHandler: DanmakuHandler
   profilePageHandler: ProfilePageHandler
   private observer: MutationObserver
+  private playerControlSyncPending = false
   feed_card_selector_cls = "dy-dl-feed-selector"
 
   /**
@@ -146,8 +151,8 @@ export class DOMPatcher {
           setTimeout(() => this._handleModal(el))
           return
         }
-        if (el.localName === "xg-controls" || el.querySelector("xg-controls")) {
-          this._handleXgControl(el)
+        if (this._isPlayerControlNode(el)) {
+          this._schedulePlayerControlSync()
           return
         }
         if (el.matches(ProfileDataService.FEED_CARD_SELECTOR)) {
@@ -159,6 +164,23 @@ export class DOMPatcher {
         }
       })
     })
+  }
+
+  private _isPlayerControlNode(node: HTMLElement): boolean {
+    return node.matches(PLAYER_CONTROL_TREE_SELECTOR) || Boolean(node.querySelector(PLAYER_CONTROL_TREE_SELECTOR)) || Boolean(node.closest(PLAYER_CONTROL_TREE_SELECTOR))
+  }
+
+  private _schedulePlayerControlSync() {
+    if (this.playerControlSyncPending) return
+    this.playerControlSyncPending = true
+    setTimeout(() => {
+      this.playerControlSyncPending = false
+      this._sync_player_controls()
+    }, 80)
+  }
+
+  private _sync_player_controls() {
+    document.body.querySelectorAll(PLAYER_RIGHT_GRID_SELECTOR).forEach((grid) => this._handleXgControl(grid as HTMLElement))
   }
 
   /** 处理模态框，注入图片下载按钮 */
@@ -210,17 +232,19 @@ export class DOMPatcher {
   }
 
   /** 处理播放器控件，注入插件菜单 */
-  private _handleXgControl(xgNode: HTMLElement) {
-    const right_grid = xgNode.querySelector(".xg-right-grid") as HTMLElement
-    if (!right_grid) return
-    if (right_grid.querySelector(".dy-dl-video-btn")) return
+  private _handleXgControl(controlNode: HTMLElement) {
+    const rightGrid = controlNode.matches(PLAYER_RIGHT_GRID_SELECTOR) ? controlNode : (controlNode.querySelector(PLAYER_RIGHT_GRID_SELECTOR) as HTMLElement | null)
+    if (!rightGrid) return
+    const rightGridChildren = Array.from(rightGrid.children)
+    if (rightGridChildren.some((child) => child.matches(".dy-dl-video-btn"))) return
+    const isXgPlayer = rightGrid.matches(".xg-right-grid")
     const btn = new TooltipsButton(
       "插件",
       [
         {
           render: () => {
             const item = document.createElement("div")
-            item.className = "xgTips item"
+            item.className = isXgPlayer ? "xgTips item" : "item"
             const label = document.createElement("span")
             label.textContent = "快捷键："
             const shortcut = document.createElement("span")
@@ -256,13 +280,15 @@ export class DOMPatcher {
         { label: "下载", callback: () => this.mediaHandler.download_current_media() },
       ],
       () => {},
+      isXgPlayer ? "xgplayer" : "douyin",
     )
     const db = btn.render()
-    const qs = right_grid.querySelector(".xgplayer-quality-setting")
-    const vc = right_grid.querySelector(".xgplayer-volume")
-    if (qs) right_grid.insertBefore(db, qs)
-    else if (vc) right_grid.insertBefore(db, vc)
-    else right_grid.appendChild(db)
+    const findAnchor = (selector: string) => rightGridChildren.find((child) => child.matches(selector)) || null
+    const qs = findAnchor(".douyin-player-playclarity-setting, .xgplayer-quality-setting")
+    const vc = findAnchor(".douyin-player-volume, .xgplayer-volume")
+    if (qs && qs.parentNode) qs.parentNode.insertBefore(db, qs)
+    else if (vc && vc.parentNode) vc.parentNode.insertBefore(db, vc)
+    else rightGrid.appendChild(db)
   }
 
   /** 处理个人主页卡片，注入选择器 */
@@ -431,6 +457,6 @@ export class DOMPatcher {
   /** 启动 DOM 观察 */
   startObserving() {
     this.observer.observe(document.body, { childList: true, subtree: true })
-    document.querySelectorAll("xg-controls").forEach((c) => this._handleXgControl(c as HTMLElement))
+    this._sync_player_controls()
   }
 }
