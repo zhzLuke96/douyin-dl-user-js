@@ -12,6 +12,9 @@ const ACTIVE_VIDEO_SELECTORS = [
   ".xg-video-container video",
 ] as const
 
+const DETAIL_PLAYER_CONTAINER_SELECTOR = '[data-e2e="player-container"]'
+const FEED_ACTIVE_WORK_CONTAINER_SELECTOR = '[data-e2e="feed-active-video"]'
+
 function hasMediaShape(media: any): boolean {
   if (!media || typeof media !== "object") return false
   const hasAwemeId = typeof media.awemeId === "string" || typeof media.awemeId === "number"
@@ -83,6 +86,27 @@ export function readPlayerVideoSize(player: any): { width: number; height: numbe
   if (video?.width && video?.height) return { width: video.width, height: video.height }
   const videoEl = readPlayerVideoElement(player)
   if (videoEl?.videoWidth && videoEl?.videoHeight) return { width: videoEl.videoWidth, height: videoEl.videoHeight }
+  return null
+}
+
+/**
+ * 读取图文作品当前显示图片的地址。
+ * 轮播是水平的，用与作品容器的水平重叠判断哪一张在可视区内。
+ */
+export function readCurrentNoteImageUrl(): string | null {
+  const selector = /^\/(?:note|video)\//.test(location.pathname) ? DETAIL_PLAYER_CONTAINER_SELECTOR : FEED_ACTIVE_WORK_CONTAINER_SELECTOR
+  const container = document.querySelector<HTMLElement>(selector)
+  if (!container) return null
+
+  const bounds = container.getBoundingClientRect()
+  const images = container.querySelectorAll<HTMLImageElement>(":scope .dySwiperSlide img")
+
+  for (const img of images) {
+    const rect = img.getBoundingClientRect()
+    if (rect.right <= bounds.left || rect.left >= bounds.right) continue
+    if (getComputedStyle(img).filter.includes("blur")) continue
+    return img.currentSrc || img.src || null
+  }
   return null
 }
 

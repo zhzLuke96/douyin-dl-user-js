@@ -122,3 +122,13 @@ export function isProfilePagePath(pathname = location.pathname): boolean {
   const segments = pathname.split("/").filter(Boolean)
   return segments.length === 2 && segments[0] === "user"
 }
+
+/**
+ * 根据 MIME 类型推导文件扩展名，无法识别时返回 fallback。
+ * image/jpeg 统一映射为 jpg，避免出现不常见的 jpeg 后缀。
+ */
+export function extensionFromMime(type: string, fallback = "bin"): string {
+  if (type === "image/jpeg") return "jpg"
+  const ext = type.split("/")[1]?.toLowerCase() ?? ""
+  return /^[a-z0-9]+$/.test(ext) ? ext : fallback
+}
