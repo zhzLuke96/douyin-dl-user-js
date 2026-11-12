@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { normalizeBasename, normalizeFilename, normalizePathSegment } from "../../src/utils/string"
+import { extensionFromMime, normalizeBasename, normalizeFilename, normalizePathSegment } from "../../src/utils/string"
 
 const WINDOWS_ILLEGAL_CHARS = ["<", ">", ":", '"', "/", "\\", "|", "?", "*"] as const
 
@@ -96,6 +96,20 @@ describe("normalizeBasename", () => {
   it("returns a safe fallback for invalid input", () => {
     expect(normalizeBasename(null)).toBe("file")
     expect(normalizeBasename(undefined)).toBe("file")
+  })
+})
+
+describe("extensionFromMime", () => {
+  it("maps common image types", () => {
+    expect(extensionFromMime("image/jpeg")).toBe("jpg")
+    expect(extensionFromMime("image/png")).toBe("png")
+    expect(extensionFromMime("image/webp")).toBe("webp")
+  })
+
+  it("falls back for unknown or malformed types", () => {
+    expect(extensionFromMime("", "png")).toBe("png")
+    expect(extensionFromMime("image/svg+xml", "png")).toBe("png")
+    expect(extensionFromMime("text/plain")).toBe("plain")
   })
 })
 

@@ -275,8 +275,8 @@ export class DOMPatcher {
             }
           },
         },
-        { label: "复制视频帧", callback: () => this.videoHandler.copy_current_frame() },
-        { label: "下载视频帧", callback: () => this.videoHandler.download_current_frame() },
+        { label: "复制当前画面", callback: () => this.videoHandler.copy_current_frame() },
+        { label: "下载当前画面", callback: () => this.videoHandler.download_current_frame() },
         { label: "下载", callback: () => this.mediaHandler.download_current_media() },
       ],
       () => {},
