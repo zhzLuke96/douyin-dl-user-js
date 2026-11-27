@@ -119,9 +119,11 @@ export class DownloaderLauncher {
   // ==================== Static utilities ====================
 
   /**
-   * 标准化请求头：转换为对象，添加常用默认头
+   * 标准化请求头：转换为对象，默认附带常用头（Cookie / UA / Origin / Referer）
+   *
+   * @param skipDefaults 为 true 时只返回传入的头，不附加常用头
    */
-  static normalizeHeaders(headers: Record<string, any> | string = {}, addDefault = false): Record<string, string> {
+  static normalizeHeaders(headers: Record<string, any> | string = {}, skipDefaults = false): Record<string, string> {
     if (typeof headers === "string") {
       const raw: Record<string, string> = {}
       headers.split(/[\r\n]+/).forEach((line) => {
@@ -143,7 +145,7 @@ export class DownloaderLauncher {
         .join("-")
       newHeaders[normalizedKey] = value
     }
-    if (addDefault) return newHeaders
+    if (skipDefaults) return newHeaders
     return {
       Dnt: "",
       "Cache-Control": "no-cache",
