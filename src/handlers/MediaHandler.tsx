@@ -285,8 +285,11 @@ export class MediaHandler {
         }
         // 单纯的图片图集项
         // NOTE: .urlList 里面是 q75的webp 图片， downloadUrlList 里面是完整原版大图但是带水印...
-        const img_urls = item.urlList?.filter(Boolean) || item.downloadUrlList?.filter(Boolean)
-        if (img_urls?.length > 0) {
+        // NOTE: 空数组是 truthy，用 `||` 的话 urlList 为空时不会回退，必须先判长度
+        const webp_urls = item.urlList?.filter(Boolean) || []
+        const origin_urls = item.downloadUrlList?.filter(Boolean) || []
+        const img_urls = webp_urls.length > 0 ? webp_urls : origin_urls
+        if (img_urls.length > 0) {
           const dl = await this.downloader.download_file_with_error(img_urls[0], fn, img_urls, { silent: !alertOnFail, media, mediaType: "image" })
           if (dl.ok) downloadedCount++
           else lastError = lastError || dl.error_msg
