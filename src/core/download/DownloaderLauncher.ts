@@ -1,4 +1,4 @@
-import { runInContext } from "../../utils/format"
+import { renderTemplate } from "../../utils/template"
 import { normalizeBasename, normalizeFilename, normalizePathSegment } from "../../utils/string"
 
 interface LauncherConfig {
@@ -43,12 +43,8 @@ export class DownloaderLauncher {
    */
   private _resolveDirTemplate(input: string, context: any, fallback = ""): string {
     if (typeof input !== "string" || !input.trim()) return fallback
-    try {
-      const resolved = runInContext(context, input)
-      return typeof resolved === "string" && resolved.trim() ? resolved : fallback
-    } catch {
-      return fallback
-    }
+    const resolved = renderTemplate(context, input)
+    return resolved.trim() ? resolved : fallback
   }
 
   // ==================== invoke_download ====================
