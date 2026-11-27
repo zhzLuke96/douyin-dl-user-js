@@ -4,7 +4,8 @@ import { createCSS } from "../../utils/css-in-js"
 import { theme } from "../../utils/theme"
 import { Modal } from "./Modal"
 import { DownloadHistory } from "../../core/download/DownloadHistory"
-import { runInContext, formatDate } from "../../utils/format"
+import { formatDate } from "../../utils/format"
+import { renderTemplate } from "../../utils/template"
 import { normalizeBasename, normalizePathSegment } from "../../utils/string"
 import { Config } from "../../core/Config"
 
@@ -206,12 +207,8 @@ const previewFilename = (template: string, maxLen: number): string => {
     create_date_YYYYMMDD: formatDate(create_date, "YYYYMMDD"),
     create_date_YYYYMMDD_HHmmss: formatDate(create_date, "YYYYMMDD_HHmmss"),
   }
-  let base
-  try {
-    base = runInContext(ctx, template)
-  } catch {
-    base = runInContext(ctx, "`${nickname}_${short_id}_${tags}_${desc}`")
-  }
+  const rendered = renderTemplate(ctx, template)
+  const base = rendered.trim() ? rendered : renderTemplate(ctx, "`${nickname}_${short_id}_${tags}_${desc}`")
   return normalizeBasename(base, { maxLength: maxLen })
 }
 
@@ -235,13 +232,7 @@ const previewDirPath = (template: string): string => {
     filename_base: "example",
     media: mockMedia,
   }
-  let resolved
-  try {
-    resolved = runInContext(ctx, template)
-  } catch {
-    resolved = "(无法解析)"
-  }
-  return typeof resolved === "string" ? resolved : String(resolved)
+  return renderTemplate(ctx, template)
 }
 
 // ========== SettingsTab ==========
