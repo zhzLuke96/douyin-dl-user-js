@@ -1,4 +1,5 @@
-export { runInContext, formatDate } from "./format"
+export { formatDate } from "./format"
+export { renderTemplate } from "./template"
 export { normalizeFilename, normalizeBasename, normalizePathSegment, isProfilePagePath } from "./string"
 export { createToast } from "./dom"
 export { debounce, throttle } from "./performance"

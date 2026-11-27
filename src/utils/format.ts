@@ -1,18 +1,4 @@
 /**
- * 在context下执行代码
- */
-export function runInContext(context: Record<string, any>, code: string): any {
-  const keys = Object.keys(context)
-  const head = `const {${keys.join(", ")}} = __CTX__; `
-  let body = code.trim()
-  if (!body.startsWith("`")) {
-    body = "`" + body.replace(/\\/g, "\\\\").replace(/`/g, "\\`") + "`"
-  }
-  const fn = new Function("__CTX__", `${head}\nreturn (${body})`)
-  return fn(context)
-}
-
-/**
  * 日期格式化函数
  */
 export function formatDate(date: Date, format = "YYYY-MM-DD HH:mm:ss"): string {
