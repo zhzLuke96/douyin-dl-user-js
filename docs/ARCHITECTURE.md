@@ -88,7 +88,8 @@ douyin-dl-user-js/
 |------|------|------|
 | `css-in-js.ts` | 46 | createCSS() |
 | `dom.ts` | 64 | createToast |
-| `format.ts` | 18 | runInContext, formatDate |
+| `format.ts` | 14 | formatDate |
+| `template.ts` | 113 | renderTemplate (受限插值, 不执行代码) |
 | `performance.ts` | 19 | debounce, throttle |
 | `string.ts` | 35 | normalizeFilename, isProfilePagePath |
 | `theme.ts` | 34 | theme 对象 |

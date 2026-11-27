@@ -4,7 +4,8 @@ import { Downloader } from "../core/download/Downloader"
 import { DownloadHistory } from "../core/download/DownloadHistory"
 import { Modal } from "../ui/modals/Modal"
 import { createToast } from "../utils/dom"
-import { formatDate, runInContext } from "../utils/format"
+import { formatDate } from "../utils/format"
+import { renderTemplate } from "../utils/template"
 import { normalizeBasename } from "../utils/string"
 import type { PlayerInstanceLite } from "../types/lite"
 import { DouyinMedia } from "@/types"
@@ -56,7 +57,6 @@ export class MediaHandler {
     media = this.current_media,
     filename_template = Config.global.features.filename_template || Config.defaults.filename_template,
     filename_max_length = Config.global.features.filename_max_length || 64,
-    throw_err = false,
   ): string {
     if (!media) {
       throw new Error("缺少 media")
@@ -94,14 +94,9 @@ export class MediaHandler {
     context.now_YYYYMMDD_HHmmss = formatDate(context.now_date, "YYYYMMDD_HHmmss")
     context.create_date_YYYYMMDD = formatDate(context.create_date, "YYYYMMDD")
     context.create_date_YYYYMMDD_HHmmss = formatDate(context.create_date, "YYYYMMDD_HHmmss")
-    let baseName: string
-    try {
-      baseName = runInContext(context, filename_template)
-    } catch (error) {
-      if (throw_err) throw error
-      console.error("[dy-dl] Error rendering filename template:", error)
-      baseName = runInContext(context, Config.defaults.filename_template)
-    }
+    // 模板渲染只做变量插值，不执行代码也不会抛错；渲染为空时回退到默认模板
+    const rendered = renderTemplate(context, filename_template)
+    const baseName = rendered.trim() ? rendered : renderTemplate(context, Config.defaults.filename_template)
     return normalizeBasename(baseName, { maxLength: filename_max_length })
   }
 
@@ -290,8 +285,11 @@ export class MediaHandler {
         }
         // 单纯的图片图集项
         // NOTE: .urlList 里面是 q75的webp 图片， downloadUrlList 里面是完整原版大图但是带水印...
-        const img_urls = item.urlList?.filter(Boolean) || item.downloadUrlList?.filter(Boolean)
-        if (img_urls?.length > 0) {
+        // NOTE: 空数组是 truthy，用 `||` 的话 urlList 为空时不会回退，必须先判长度
+        const webp_urls = item.urlList?.filter(Boolean) || []
+        const origin_urls = item.downloadUrlList?.filter(Boolean) || []
+        const img_urls = webp_urls.length > 0 ? webp_urls : origin_urls
+        if (img_urls.length > 0) {
           const dl = await this.downloader.download_file_with_error(img_urls[0], fn, img_urls, { silent: !alertOnFail, media, mediaType: "image" })
           if (dl.ok) downloadedCount++
           else lastError = lastError || dl.error_msg
