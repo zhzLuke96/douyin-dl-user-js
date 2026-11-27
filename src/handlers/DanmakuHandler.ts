@@ -36,11 +36,15 @@ export class DanmakuHandler {
 
   /** 毫秒转 ASS 时间格式 */
   msToAssTime(ms: number): string {
-    const totalSec = ms / 1000
-    const h = Math.floor(totalSec / 3600)
-    const m = Math.floor((totalSec % 3600) / 60)
-    const s = totalSec % 60
-    return `${h}:${String(m).padStart(2, "0")}:${s.toFixed(2).padStart(5, "0")}`.replace(/^0:/, "")
+    // 先按厘秒四舍五入再拆分，避免 59.999s 被格式化成 "60.00" 这类非法时间
+    const totalCs = Math.max(0, Math.round(ms / 10))
+    const cs = totalCs % 100
+    const totalSeconds = (totalCs - cs) / 100
+    const h = Math.floor(totalSeconds / 3600)
+    const m = Math.floor((totalSeconds % 3600) / 60)
+    const s = totalSeconds % 60
+    const pad = (value: number) => String(value).padStart(2, "0")
+    return `${h}:${pad(m)}:${pad(s)}.${pad(cs)}`.replace(/^0:/, "")
   }
 
   /** 十六进制颜色转 ASS 颜色格式 */
